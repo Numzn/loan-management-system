@@ -1,0 +1,5 @@
+npx create-react-app loan-management-system
+cd loan-management-system
+npm install @mui/material @emotion/react @emotion/styled
+npm install firebase react-router-dom @reduxjs/toolkit react-redux
+npm install formik yup react-dropzone @mui/x-data-grid 
