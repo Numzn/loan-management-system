@@ -1,15 +1,32 @@
 # Loan Management System
 
-A modern, Kanban-style loan management system built with React and Material-UI, featuring role-based access control and real-time updates.
+A modern Kanban-style loan management system built with React, Material-UI, and Firebase. The system automates the loan approval process across different roles and provides real-time updates and notifications.
 
 ## Features
 
-- 🔐 **Role-Based Access Control**: Different dashboards for Loan Officers, Managers, Directors, and Finance Officers
-- 📊 **Kanban Board Interface**: Visual loan application tracking with drag-and-drop functionality
-- 📈 **Real-Time Metrics**: Dynamic metrics showing loan statistics and performance indicators
-- 🔔 **Notification System**: Real-time notifications for loan status updates
-- 💼 **Multiple Loan Types**: Support for Business Loans, Personal Loans, Government Loans, and Salary Advances
-- 🎨 **Modern UI/UX**: Beautiful, responsive design with Material-UI components
+- **Role-Based Access Control**
+  - Loan Officer Dashboard
+  - Manager Dashboard
+  - Director Dashboard
+  - Finance Officer Dashboard
+
+- **Kanban Board Interface**
+  - Drag-and-drop functionality
+  - Real-time updates
+  - Status tracking
+  - Visual workflow management
+
+- **Loan Processing Features**
+  - Automatic loan movement upon approval
+  - Real-time notifications
+  - Rejection/correction flow
+  - Document management
+
+- **Modern UI/UX**
+  - Material Design components
+  - Responsive layout
+  - Dark theme
+  - Interactive metrics cards
 
 ## Tech Stack
 
@@ -18,70 +35,65 @@ A modern, Kanban-style loan management system built with React and Material-UI, 
 - Firebase (Firestore)
 - React Beautiful DND
 - React Router
-- Context API for state management
+- Context API
 
 ## Prerequisites
 
-Before you begin, ensure you have met the following requirements:
-- Node.js >= 14.x
-- npm >= 6.x
-- Firebase account and project setup
+- Node.js (v14 or higher)
+- npm or yarn
+- Firebase account
 
 ## Installation
 
 1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/loan-management-system.git
-```
+   ```bash
+   git clone [repository-url]
+   cd loan-management-system
+   ```
 
-2. Navigate to the project directory:
-```bash
-cd loan-management-system
-```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-3. Install dependencies:
-```bash
-npm install
-```
+3. Create a `.env` file in the root directory and add your Firebase configuration:
+   ```
+   REACT_APP_FIREBASE_API_KEY=your_api_key
+   REACT_APP_FIREBASE_AUTH_DOMAIN=your_auth_domain
+   REACT_APP_FIREBASE_PROJECT_ID=your_project_id
+   REACT_APP_FIREBASE_STORAGE_BUCKET=your_storage_bucket
+   REACT_APP_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
+   REACT_APP_FIREBASE_APP_ID=your_app_id
+   ```
 
-4. Create a `.env` file in the root directory and add your Firebase configuration:
-```env
-REACT_APP_FIREBASE_API_KEY=your_api_key
-REACT_APP_FIREBASE_AUTH_DOMAIN=your_auth_domain
-REACT_APP_FIREBASE_PROJECT_ID=your_project_id
-REACT_APP_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-REACT_APP_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-REACT_APP_FIREBASE_APP_ID=your_app_id
-```
-
-5. Start the development server:
-```bash
-npm start
-```
+4. Start the development server:
+   ```bash
+   npm start
+   ```
 
 ## Usage
 
-The system includes four main roles:
+1. Access the application at `http://localhost:3000`
+2. Use the mock login to access different role dashboards:
+   - Loan Officer
+   - Manager
+   - Director
+   - Finance Officer
+3. Each role has specific permissions and access to different features
 
-1. **Loan Officer Dashboard**
-   - Create new loan applications
-   - Track application status
-   - View loan metrics
+## Project Structure
 
-2. **Manager Dashboard**
-   - Review and approve/reject loans
-   - Monitor team performance
-   - Track approval rates
-
-3. **Director Dashboard**
-   - Final approval for high-value loans
-   - View department performance
-   - Monitor overall metrics
-
-4. **Finance Officer Dashboard**
-   - Handle loan disbursement
-   - Track disbursed amounts
-   - Manage fund allocation
+```
+src/
+├── components/          # Shared components
+├── managementside/     # Management dashboard components
+│   ├── components/     # Dashboard-specific components
+│   └── pages/          # Dashboard pages
+├── config/             # Configuration files
+├── contexts/           # React contexts
+├── theme/              # Theme configuration
+└── routes/             # Route definitions
+```
 
 ## Contributing
 
