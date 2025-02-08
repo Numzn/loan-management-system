@@ -11,32 +11,25 @@ import {
   Card,
   CardContent,
   Avatar,
-  Button
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText
 } from '@mui/material';
 import {
   Close as CloseIcon,
   Person as PersonIcon,
   Work as WorkIcon,
   AccountBalance as BankIcon,
-  Description as DocumentIcon
+  Description as DocumentIcon,
+  CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
 import { formatCurrency } from '../../utils/formatters';
 import { LOAN_TYPES } from '../../constants/loanTypes';
+import { LOAN_STATUS } from '../../config/supabaseClient';
 
-export default function ApplicationDetails({ open, onClose, applicationData }) {
-  const {
-    applicationNumber,
-    status,
-    stage,
-    progress,
-    submittedAt,
-    loanType,
-    calculatedResults,
-    personalDetails,
-    loanSpecificDetails,
-    documents,
-    passportPhotoUrl
-  } = applicationData || {};
+export default function ApplicationDetails({ open, onClose, applicationData, statusHistory }) {
+  if (!applicationData) return null;
 
   return (
     <Dialog 
@@ -54,21 +47,27 @@ export default function ApplicationDetails({ open, onClose, applicationData }) {
         </Box>
       </DialogTitle>
       <DialogContent>
-        {/* Header with Photo and Basic Info */}
+        {/* Header with Basic Info */}
         <Box sx={{ mb: 4, display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar
-            src={passportPhotoUrl}
-            sx={{ width: 100, height: 100 }}
-          />
+            alt={applicationData.applicant_name}
+            sx={{ 
+              width: 100, 
+              height: 100,
+              bgcolor: 'primary.main'
+            }}
+          >
+            {applicationData.applicant_name?.charAt(0)}
+          </Avatar>
           <Box>
             <Typography variant="h5">
-              {personalDetails?.firstName} {personalDetails?.lastName}
+              {applicationData.applicant_name}
             </Typography>
             <Typography color="textSecondary" gutterBottom>
-              {personalDetails?.email}
+              {applicationData.email}
             </Typography>
             <Chip 
-              label={status?.replace('_', ' ')} 
+              label={applicationData.status?.replace('_', ' ')} 
               color="primary" 
               variant="outlined"
             />
@@ -85,22 +84,24 @@ export default function ApplicationDetails({ open, onClose, applicationData }) {
             </Typography>
             <Grid container spacing={2}>
               <Grid item xs={6}>
-                <Typography color="textSecondary">Application Number:</Typography>
-                <Typography variant="body1">{applicationNumber}</Typography>
+                <Typography color="textSecondary">Application ID:</Typography>
+                <Typography variant="body1">{applicationData.application_id}</Typography>
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Submitted Date:</Typography>
                 <Typography variant="body1">
-                  {new Date(submittedAt).toLocaleDateString()}
+                  {new Date(applicationData.submitted_at).toLocaleDateString()}
                 </Typography>
               </Grid>
               <Grid item xs={6}>
-                <Typography color="textSecondary">Current Stage:</Typography>
-                <Typography variant="body1">{stage}</Typography>
+                <Typography color="textSecondary">Current Status:</Typography>
+                <Typography variant="body1">{applicationData.status?.replace('_', ' ')}</Typography>
               </Grid>
               <Grid item xs={6}>
-                <Typography color="textSecondary">Progress:</Typography>
-                <Typography variant="body1">{progress}% Complete</Typography>
+                <Typography color="textSecondary">Last Updated:</Typography>
+                <Typography variant="body1">
+                  {new Date(applicationData.updated_at || applicationData.submitted_at).toLocaleDateString()}
+                </Typography>
               </Grid>
             </Grid>
           </Grid>
@@ -112,30 +113,59 @@ export default function ApplicationDetails({ open, onClose, applicationData }) {
             </Typography>
             <Grid container spacing={2}>
               <Grid item xs={6}>
-                <Typography color="textSecondary">Loan Type:</Typography>
+                <Typography color="textSecondary">Loan Purpose:</Typography>
                 <Typography variant="body1">
-                  {LOAN_TYPES[loanType]?.name}
+                  {applicationData.loan_purpose}
                 </Typography>
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Amount:</Typography>
                 <Typography variant="body1">
-                  {formatCurrency(calculatedResults?.loanAmount)}
+                  {formatCurrency(applicationData.loan_amount)}
                 </Typography>
               </Grid>
               <Grid item xs={6}>
-                <Typography color="textSecondary">Monthly Payment:</Typography>
+                <Typography color="textSecondary">Monthly Income:</Typography>
                 <Typography variant="body1">
-                  {formatCurrency(calculatedResults?.monthlyPayment)}
+                  {formatCurrency(applicationData.monthly_income)}
                 </Typography>
               </Grid>
               <Grid item xs={6}>
-                <Typography color="textSecondary">Duration:</Typography>
+                <Typography color="textSecondary">Employment Type:</Typography>
                 <Typography variant="body1">
-                  {calculatedResults?.duration} months
+                  {applicationData.employment_type}
                 </Typography>
               </Grid>
             </Grid>
+          </Grid>
+
+          {/* Status History */}
+          <Grid item xs={12}>
+            <Typography variant="h6" color="primary" gutterBottom>
+              Application Timeline
+            </Typography>
+            <List>
+              {statusHistory?.map((status, index) => (
+                <ListItem key={index}>
+                  <ListItemIcon>
+                    <CheckCircleIcon color="success" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={status.status.replace('_', ' ')}
+                    secondary={
+                      <>
+                        {new Date(status.created_at).toLocaleString()}
+                        {status.notes && (
+                          <Typography variant="body2" color="textSecondary">
+                            {status.notes}
+                          </Typography>
+                        )}
+                      </>
+                    }
+                  />
+                </ListItem>
+              ))}
+            </List>
           </Grid>
 
           {/* Documents */}
@@ -144,16 +174,21 @@ export default function ApplicationDetails({ open, onClose, applicationData }) {
               Submitted Documents
             </Typography>
             <Grid container spacing={2}>
-              {Object.entries(documents || {}).map(([name, file]) => (
-                <Grid item xs={12} sm={6} key={name}>
+              {applicationData.loan_documents?.map((doc, index) => (
+                <Grid item xs={12} sm={6} key={index}>
                   <Card variant="outlined">
                     <CardContent>
                       <Box sx={{ display: 'flex', alignItems: 'center' }}>
                         <DocumentIcon sx={{ mr: 1 }} color="primary" />
                         <Box>
-                          <Typography variant="subtitle2">{name}</Typography>
+                          <Typography variant="subtitle2">
+                            {doc.document_type.replace('_', ' ')}
+                          </Typography>
                           <Typography variant="caption" color="textSecondary">
-                            {file.name}
+                            {doc.file_name}
+                          </Typography>
+                          <Typography variant="caption" display="block" color="textSecondary">
+                            Uploaded: {new Date(doc.uploaded_at).toLocaleString()}
                           </Typography>
                         </Box>
                       </Box>
@@ -171,8 +206,20 @@ export default function ApplicationDetails({ open, onClose, applicationData }) {
             Current Status
           </Typography>
           <Typography variant="body2" color="textSecondary">
-            Your application is currently {status?.toLowerCase()?.replace('_', ' ')}. 
-            Our team will review your application and update you on any progress.
+            {applicationData.status === LOAN_STATUS.DRAFT && 
+              'Your application is currently in draft. Please complete and submit it.'}
+            {applicationData.status === LOAN_STATUS.SUBMITTED && 
+              'Your application has been submitted and is awaiting review.'}
+            {applicationData.status === LOAN_STATUS.UNDER_REVIEW && 
+              'Your application is currently under review by our team.'}
+            {applicationData.status === LOAN_STATUS.APPROVED && 
+              'Congratulations! Your loan application has been approved.'}
+            {applicationData.status === LOAN_STATUS.REJECTED && 
+              'Unfortunately, your loan application was not approved at this time.'}
+            {applicationData.status === LOAN_STATUS.DISBURSED && 
+              'Your loan has been disbursed. Please check your bank account.'}
+            {applicationData.status === LOAN_STATUS.CLOSED && 
+              'This loan application has been closed.'}
           </Typography>
         </Box>
       </DialogContent>

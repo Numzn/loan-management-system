@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -26,7 +26,15 @@ const genderOptions = [
 export default function LoanDetailsForm() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { loanType, calculatedResults } = location.state || {};
+  
+  // Get application data and step information from location state
+  const { 
+    loanType, 
+    calculatedResults,
+    step: currentStep = 2,
+    totalSteps = 7,
+    isApplicationFlow = true 
+  } = location.state || {};
 
   const [formData, setFormData] = useState({
     firstName: '',
@@ -130,16 +138,34 @@ export default function LoanDetailsForm() {
     }
   };
 
-  const handleSubmit = () => {
-    if (validateForm()) {
-      navigate('/loan-specific-details', {
-        state: {
-          ...location.state,
-          personalDetails: formData
-        }
-      });
+  const handleSubmit = useCallback(() => {
+    if (!validateForm()) {
+      return;
     }
-  };
+
+    // Get existing loan application data
+    const existingData = JSON.parse(sessionStorage.getItem('loanApplication') || '{}');
+    
+    // Merge form data with existing loan application data
+    const updatedData = {
+      ...existingData,
+      personalDetails: formData
+    };
+
+    // Save updated data to session storage
+    sessionStorage.setItem('loanApplication', JSON.stringify(updatedData));
+
+    // Navigate to loan specific details
+    navigate('/loan-specific-details', {
+      state: {
+        ...updatedData,
+        step: currentStep + 1,
+        totalSteps,
+        isApplicationFlow
+      },
+      replace: true
+    });
+  }, [navigate, formData, currentStep, totalSteps, isApplicationFlow]);
 
   const validateAge = (dob) => {
     const age = new Date().getFullYear() - new Date(dob).getFullYear();
@@ -149,14 +175,23 @@ export default function LoanDetailsForm() {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       {/* Progress Bar */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="subtitle1" gutterBottom>
-          Step 2 of 4: Personal Details
-        </Typography>
-        <Box sx={{ width: '100%', bgcolor: 'grey.200', borderRadius: 1, height: 8 }}>
-          <Box sx={{ width: '50%', height: '100%', bgcolor: 'primary.main', borderRadius: 1 }} />
+      {isApplicationFlow && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            Step {currentStep} of {totalSteps}: Personal Details
+          </Typography>
+          <Box sx={{ width: '100%', bgcolor: 'grey.200', borderRadius: 1, height: 8 }}>
+            <Box 
+              sx={{ 
+                width: `${(currentStep / totalSteps) * 100}%`, 
+                height: '100%', 
+                bgcolor: '#fd7c07', 
+                borderRadius: 1 
+              }} 
+            />
+          </Box>
         </Box>
-      </Box>
+      )}
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={8}>
@@ -307,7 +342,16 @@ export default function LoanDetailsForm() {
               <Button onClick={() => navigate(-1)}>
                 Back
               </Button>
-              <Button variant="contained" onClick={handleSubmit}>
+              <Button 
+                variant="contained" 
+                onClick={handleSubmit}
+                sx={{
+                  bgcolor: '#fd7c07',
+                  '&:hover': {
+                    bgcolor: '#e66e06',
+                  },
+                }}
+              >
                 Next
               </Button>
             </Box>

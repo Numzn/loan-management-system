@@ -1,147 +1,266 @@
-import { useState, useEffect } from 'react';
-import { db } from '../../config/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import DashboardLayout from '../layout/DashboardLayout';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  Grid, Paper, Typography, Box, CircularProgress,
-  Table, TableBody, TableCell, TableHead, TableRow,
-  Button, Chip
+  Box,
+  Container,
+  Grid,
+  Paper,
+  Typography,
+  Tabs,
+  Tab,
+  Button,
+  Chip,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  IconButton,
+  Tooltip,
+  CircularProgress,
+  TextField,
+  MenuItem,
+  Alert,
 } from '@mui/material';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import PeopleIcon from '@mui/icons-material/People';
-import StatsCard from '../shared/StatsCard';
-import LoanDetailsCard from '../shared/LoanDetailsCard';
-import PendingActionsIcon from '@mui/icons-material/PendingActions';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CancelIcon from '@mui/icons-material/Cancel';
+import {
+  Visibility,
+  AttachFile,
+  CheckCircle,
+  Warning,
+  Schedule,
+  Search,
+  FilterList,
+  Refresh,
+} from '@mui/icons-material';
+import { supabase, TABLES, LOAN_STATUS } from '../../config/supabaseClient';
+import { formatCurrency } from '../../utils/formatters';
+import { StyledCard } from '../../theme/components';
 
-const menuItems = [
-  {
-    text: 'Dashboard',
-    path: '/officer-dashboard',
-    icon: <DashboardIcon />
-  },
-  {
-    text: 'Applications',
-    path: '/officer/applications',
-    icon: <AssignmentIcon />
-  },
-  {
-    text: 'Clients',
-    path: '/officer/clients',
-    icon: <PeopleIcon />
+const statusChipProps = {
+  [LOAN_STATUS.DRAFT]: { label: 'Draft', color: 'default', icon: <Schedule /> },
+  [LOAN_STATUS.SUBMITTED]: { label: 'Submitted', color: 'info', icon: <Schedule /> },
+  [LOAN_STATUS.UNDER_REVIEW]: { label: 'Under Review', color: 'warning', icon: <Schedule /> },
+  [LOAN_STATUS.APPROVED]: { label: 'Approved', color: 'success', icon: <CheckCircle /> },
+  [LOAN_STATUS.REJECTED]: { label: 'Rejected', color: 'error', icon: <Warning /> },
+  [LOAN_STATUS.DISBURSED]: { label: 'Disbursed', color: 'success', icon: <CheckCircle /> },
+  [LOAN_STATUS.CLOSED]: { label: 'Closed', color: 'default', icon: <CheckCircle /> },
+};
+
+const StatsCard = ({ title, value, icon: Icon, color = 'primary' }) => (
+  <StyledCard>
+    <Box sx={{ p: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        {Icon && <Icon sx={{ mr: 1, color: `${color}.main` }} />}
+        <Typography variant="h6" color="textSecondary">
+          {title}
+        </Typography>
+      </Box>
+      <Typography variant="h4" sx={{ color: `${color}.main` }}>
+        {value}
+      </Typography>
+    </Box>
+  </StyledCard>
+);
+
+const ApplicationsTable = ({ applications, loading, onViewApplication }) => {
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" p={3}>
+        <CircularProgress />
+      </Box>
+    );
   }
-];
+
+  return (
+    <TableContainer>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableCell>Application ID</TableCell>
+            <TableCell>Applicant Name</TableCell>
+            <TableCell>Loan Amount</TableCell>
+            <TableCell>Purpose</TableCell>
+            <TableCell>Status</TableCell>
+            <TableCell>Documents</TableCell>
+            <TableCell>Submitted At</TableCell>
+            <TableCell>Actions</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {applications.map((app) => {
+            const statusProps = statusChipProps[app.status] || statusChipProps[LOAN_STATUS.DRAFT];
+            return (
+              <TableRow key={app.id} hover>
+                <TableCell>{app.application_id}</TableCell>
+                <TableCell>{app.applicant_name}</TableCell>
+                <TableCell>{formatCurrency(app.loan_amount)}</TableCell>
+                <TableCell>{app.loan_purpose}</TableCell>
+                <TableCell>
+                  <Chip
+                    icon={statusProps.icon}
+                    label={statusProps.label}
+                    color={statusProps.color}
+                    size="small"
+                  />
+                </TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={1}>
+                    {app.documents?.map((doc, index) => (
+                      <Tooltip key={index} title={`${doc.document_type}: ${doc.file_name}`}>
+                        <IconButton size="small">
+                          <AttachFile fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    ))}
+                  </Stack>
+                </TableCell>
+                <TableCell>
+                  {app.submitted_at ? new Date(app.submitted_at).toLocaleDateString() : '-'}
+                </TableCell>
+                <TableCell>
+                  <Tooltip title="View Details">
+                    <IconButton onClick={() => onViewApplication(app.id)} size="small">
+                      <Visibility fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+};
 
 export default function LoanOfficerDashboard() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [recentApplications, setRecentApplications] = useState([]);
+  const [error, setError] = useState(null);
+  const [applications, setApplications] = useState([]);
   const [stats, setStats] = useState({
-    pending: 0,
-    underReview: 0,
+    submitted: 0,
+    under_review: 0,
     approved: 0,
-    rejected: 0
+    rejected: 0,
   });
+  const [filters, setFilters] = useState({
+    status: '',
+    search: '',
+  });
+  const [currentTab, setCurrentTab] = useState(0);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const applicationsQuery = query(
-          collection(db, 'loanApplications'),
-          orderBy('createdAt', 'desc'),
-          where('status', 'in', ['submitted', 'under_review'])
-        );
-        
-        const snapshot = await getDocs(applicationsQuery);
-        const applications = [];
-        let statsCount = {
-          pending: 0,
-          underReview: 0,
+  const fetchApplications = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      let query = supabase
+        .from(TABLES.LOAN_APPLICATIONS)
+        .select(`
+          *,
+          documents:${TABLES.LOAN_DOCUMENTS}(*)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (filters.status) {
+        query = query.eq('status', filters.status);
+      }
+      if (filters.search) {
+        query = query.or(`applicant_name.ilike.%${filters.search}%,application_id.ilike.%${filters.search}%`);
+      }
+
+      const { data, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+
+      // Calculate stats
+      const newStats = {
+        submitted: 0,
+        under_review: 0,
           approved: 0,
-          rejected: 0
-        };
+        rejected: 0,
+      };
 
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          applications.push({ id: doc.id, ...data });
-          
-          switch (data.status) {
-            case 'submitted':
-              statsCount.pending++;
-              break;
-            case 'under_review':
-              statsCount.underReview++;
-              break;
-            case 'approved':
-              statsCount.approved++;
-              break;
-            case 'rejected':
-              statsCount.rejected++;
-              break;
-            default:
-              break;
-          }
-        });
+      data.forEach(app => {
+        if (newStats.hasOwnProperty(app.status)) {
+          newStats[app.status]++;
+        }
+      });
 
-        setRecentApplications(applications.slice(0, 5));
-        setStats(statsCount);
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
+      setApplications(data);
+      setStats(newStats);
+    } catch (err) {
+      console.error('Error fetching applications:', err);
+      setError('Failed to load applications. Please try again.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchDashboardData();
-  }, []);
+  useEffect(() => {
+    fetchApplications();
+  }, [filters]);
 
-  const getStatusChip = (status) => {
-    const statusColors = {
-      submitted: 'primary',
-      under_review: 'warning',
-      approved: 'success',
-      rejected: 'error'
-    };
+  const handleTabChange = (event, newValue) => {
+    setCurrentTab(newValue);
+    setFilters(prev => ({
+      ...prev,
+      status: newValue === 0 ? '' : 
+             newValue === 1 ? LOAN_STATUS.SUBMITTED :
+             newValue === 2 ? LOAN_STATUS.UNDER_REVIEW :
+             newValue === 3 ? LOAN_STATUS.APPROVED : ''
+    }));
+  };
 
-    return (
-      <Chip
-        label={status.replace('_', ' ').toUpperCase()}
-        color={statusColors[status] || 'default'}
-        size="small"
-      />
-    );
+  const handleSearch = (event) => {
+    setFilters(prev => ({
+      ...prev,
+      search: event.target.value
+    }));
+  };
+
+  const handleViewApplication = (id) => {
+    navigate(`/loan-officer/applications/${id}`);
   };
 
   return (
-    <DashboardLayout title="Loan Officer Dashboard" menuItems={menuItems}>
-      {loading ? (
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      {/* Header */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom color="primary">
+          Loan Officer Dashboard
+        </Typography>
+        <Typography color="textSecondary">
+          Manage and review loan applications
+        </Typography>
         </Box>
-      ) : (
-        <Grid container spacing={3}>
+
+      {/* Stats Cards */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
           <Grid item xs={12} sm={6} md={3}>
             <StatsCard
-              title="Pending Applications"
-              value={stats.pending}
-              icon={PendingActionsIcon}
-              color="warning"
+            title="Submitted"
+            value={stats.submitted}
+            icon={Schedule}
+            color="info"
             />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <StatsCard
               title="Under Review"
-              value={stats.underReview}
-              icon={AssignmentIcon}
-              color="info"
+            value={stats.under_review}
+            icon={Schedule}
+            color="warning"
             />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <StatsCard
               title="Approved"
               value={stats.approved}
-              icon={CheckCircleIcon}
+            icon={CheckCircle}
               color="success"
             />
           </Grid>
@@ -149,29 +268,66 @@ export default function LoanOfficerDashboard() {
             <StatsCard
               title="Rejected"
               value={stats.rejected}
-              icon={CancelIcon}
+            icon={Warning}
               color="error"
             />
           </Grid>
+      </Grid>
 
-          <Grid item xs={12}>
-            <Typography variant="h6" gutterBottom>
-              Recent Applications
-            </Typography>
-            <Grid container spacing={2}>
-              {recentApplications.map((application) => (
-                <Grid item xs={12} key={application.id}>
-                  <LoanDetailsCard
-                    loan={application}
-                    onAction={(loan) => navigate(`/officer/applications/${loan.id}`)}
-                    actionLabel="Review Application"
-                  />
-                </Grid>
-              ))}
-            </Grid>
-          </Grid>
-        </Grid>
-      )}
-    </DashboardLayout>
+      {/* Applications Section */}
+      <Paper sx={{ mb: 4 }}>
+        {/* Filters */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={currentTab} onChange={handleTabChange}>
+            <Tab label="All Applications" />
+            <Tab label="New Submissions" />
+            <Tab label="Under Review" />
+            <Tab label="Approved" />
+          </Tabs>
+        </Box>
+
+        {/* Search and Actions */}
+        <Box sx={{ p: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
+          <TextField
+            size="small"
+            placeholder="Search applications..."
+            value={filters.search}
+            onChange={handleSearch}
+            InputProps={{
+              startAdornment: <Search sx={{ color: 'text.secondary', mr: 1 }} />,
+            }}
+            sx={{ flexGrow: 1 }}
+          />
+          <Button
+            startIcon={<FilterList />}
+            variant="outlined"
+            onClick={() => {}}
+          >
+            Filters
+          </Button>
+          <Button
+            startIcon={<Refresh />}
+            variant="outlined"
+            onClick={fetchApplications}
+          >
+            Refresh
+          </Button>
+        </Box>
+
+        {/* Error Alert */}
+        {error && (
+          <Alert severity="error" sx={{ mx: 2, mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        {/* Applications Table */}
+        <ApplicationsTable
+          applications={applications}
+          loading={loading}
+          onViewApplication={handleViewApplication}
+        />
+      </Paper>
+    </Container>
   );
 } 

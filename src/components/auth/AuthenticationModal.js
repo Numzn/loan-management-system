@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { authService } from '../../services/authService';
 import {
   Dialog,
   DialogTitle,
   DialogContent,
-  TextField,
-  Button,
   Box,
   Typography,
-  CircularProgress,
-  Alert
+  TextField,
+  Button,
+  Alert,
+  CircularProgress
 } from '@mui/material';
-import { authService } from '../../services/authService';
 
 export default function AuthenticationModal({ 
   open, 
@@ -18,6 +19,7 @@ export default function AuthenticationModal({
   email, 
   onSuccess 
 }) {
+  const location = useLocation();
   const [step, setStep] = useState('SEND_OTP');
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
@@ -56,7 +58,12 @@ export default function AuthenticationModal({
     try {
       const isValid = await authService.verifyOTP(otp);
       if (isValid) {
-        onSuccess();
+        // Get the redirect path and form data from location state
+        const { from, formData } = location.state || {};
+        onSuccess(formData);
+        
+        // Close the modal after successful verification
+        onClose();
       } else {
         setError('Invalid OTP. Please try again.');
       }
@@ -67,12 +74,17 @@ export default function AuthenticationModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose}>
+    <Dialog 
+      open={open} 
+      onClose={loading ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+    >
       <DialogTitle>
         Authentication Required
       </DialogTitle>
       <DialogContent>
-        <Box sx={{ p: 2, width: 400 }}>
+        <Box sx={{ p: 2 }}>
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
@@ -92,6 +104,7 @@ export default function AuthenticationModal({
                 variant="contained"
                 onClick={handleSendOTP}
                 disabled={loading}
+                sx={{ mt: 2 }}
               >
                 {loading ? <CircularProgress size={24} /> : 'Send OTP'}
               </Button>

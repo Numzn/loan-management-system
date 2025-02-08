@@ -1,27 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Box,
   Container,
-  Paper,
   Typography,
-  TextField,
-  Button,
   Grid,
-  Card,
-  CardContent,
+  Alert,
+  CircularProgress,
   MenuItem,
+  Select,
   FormControl,
   InputLabel,
-  Select,
-  InputAdornment,
-  CircularProgress,
-  Alert
 } from '@mui/material';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import { motion } from 'framer-motion';
 import { LOAN_TYPES } from '../../constants/loanTypes';
 import { formatCurrency } from '../../utils/formatters';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import { userDataService } from '../../services/userDataService';
+import {
+  FormCard,
+  StyledTextField,
+  PrimaryButton,
+  SecondaryButton,
+  StyledCard,
+  fadeInUp,
+} from '../../theme/components';
 
 const CALCULATOR_CONSTANTS = {
   SERVICE_FEE_RATE: 0.05,
@@ -36,71 +38,147 @@ const CALCULATOR_CONSTANTS = {
 export default function LoanCalculator() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [selectedLoanType, setSelectedLoanType] = useState(location.state?.loanType || '');
-  const [loanAmount, setLoanAmount] = useState('');
-  const [duration, setDuration] = useState('');
+  const { loanType: urlLoanType } = useParams();
+  
+  // Initialize state with default values or from session storage
+  const [formData, setFormData] = useState(() => {
+    const savedData = sessionStorage.getItem('loanApplication');
+    if (savedData) {
+      const parsed = JSON.parse(savedData);
+      return {
+        loanType: parsed.loanType || '',
+        amount: parsed.amount?.toString() || '',
+        duration: parsed.duration?.toString() || '',
+        interestRate: parsed.interestRate || ''
+      };
+    }
+    return {
+      loanType: '',
+      amount: '',
+      duration: '',
+      interestRate: ''
+    };
+  });
+  
   const [calculatedResults, setCalculatedResults] = useState(null);
   const [calculating, setCalculating] = useState(false);
-  const { loanType: urlLoanType } = useParams();
-  const preselectedType = location.state?.preselectedType || urlLoanType?.toUpperCase();
-  const [interestRate, setInterestRate] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (preselectedType && LOAN_TYPES[preselectedType]) {
-      setSelectedLoanType(preselectedType);
-      const selectedLoan = LOAN_TYPES[preselectedType];
-      setInterestRate(selectedLoan.monthlyInterestRate);
-    }
-  }, [preselectedType]);
+  // Set default values for application flow
+  const isApplicationFlow = true; // Remove dependency on location.state
+  const currentStep = 1;
+  const totalSteps = 7;
 
-  const handleAmountChange = (e) => {
-    const value = e.target.value;
-    const numericValue = value.replace(/[^0-9.]/g, '');
+  // Initialize loan type from URL or state
+  useEffect(() => {
+    const preselectedType = location.state?.preselectedType || urlLoanType?.toUpperCase();
+    if (preselectedType && LOAN_TYPES[preselectedType] && !formData.loanType) {
+      setFormData(prev => ({
+        ...prev,
+        loanType: preselectedType,
+        interestRate: LOAN_TYPES[preselectedType].monthlyInterestRate
+      }));
+    }
+  }, [urlLoanType, location.state?.preselectedType]);
+
+  const handleInputChange = useCallback((e) => {
+    const { name, value } = e.target;
     
+    if (name === 'amount') {
+      const numericValue = value.replace(/[^0-9.]/g, '');
     if (numericValue.split('.').length > 2) return;
+      
     const amount = parseFloat(numericValue);
-    const maxAmount = LOAN_TYPES[selectedLoanType]?.maxAmount || Infinity;
+      const maxAmount = LOAN_TYPES[formData.loanType]?.maxAmount || Infinity;
+      
     if (amount > maxAmount) {
       setError(`Maximum amount allowed is ${formatCurrency(maxAmount)}`);
       return;
     }
     
-    setLoanAmount(numericValue);
+      setError('');
+      setFormData(prev => ({ ...prev, [name]: numericValue }));
+    } else if (name === 'loanType') {
+      const selectedLoan = LOAN_TYPES[value];
+      setFormData(prev => ({
+        ...prev,
+        loanType: value,
+        interestRate: selectedLoan?.monthlyInterestRate || ''
+      }));
     setError('');
-  };
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
+  }, [formData.loanType]);
 
-  const handleAmountBlur = () => {
-    if (loanAmount) {
-      const numericValue = parseFloat(loanAmount);
+  const handleAmountBlur = useCallback(() => {
+    if (formData.amount) {
+      const numericValue = parseFloat(formData.amount);
       if (!isNaN(numericValue)) {
-        setLoanAmount(formatCurrency(numericValue).replace('ZMW', '').trim());
+        setFormData(prev => ({
+          ...prev,
+          amount: formatCurrency(numericValue).replace('ZMW', '').trim()
+        }));
       }
     }
-  };
+  }, [formData.amount]);
 
-  const calculateLoan = async () => {
-    if (!selectedLoanType || !loanAmount || !duration) return;
+  const calculateLoan = useCallback(() => {
+    if (!formData.loanType || !formData.amount || !formData.duration) return;
 
     setCalculating(true);
     try {
-      const amount = parseFloat(loanAmount.replace(/[^0-9.]/g, ''));
+      // Remove any non-numeric characters except decimal point
+      const amount = parseFloat(formData.amount.replace(/[^0-9.]/g, ''));
+      if (isNaN(amount)) {
+        setError('Please enter a valid amount');
+        setCalculating(false);
+        return;
+      }
       
-      const loanConfig = LOAN_TYPES[selectedLoanType];
-      if (amount < loanConfig.minAmount || amount > loanConfig.maxAmount) {
-        alert(`Amount must be between ${formatCurrency(loanConfig.minAmount)} and ${formatCurrency(loanConfig.maxAmount)}`);
+      const loanConfig = LOAN_TYPES[formData.loanType];
+      if (!loanConfig) {
+        setError('Invalid loan type selected');
+        setCalculating(false);
         return;
       }
 
-      const months = parseInt(duration);
-      const interestRate = CALCULATOR_CONSTANTS.INTEREST_RATES[selectedLoanType];
+      if (amount < loanConfig.minAmount || amount > loanConfig.maxAmount) {
+        setError(`Amount must be between ${formatCurrency(loanConfig.minAmount)} and ${formatCurrency(loanConfig.maxAmount)}`);
+        setCalculating(false);
+        return;
+      }
+
+      const months = parseInt(formData.duration);
+      if (isNaN(months)) {
+        setError('Please select a valid duration');
+        setCalculating(false);
+        return;
+      }
+
+      const interestRate = CALCULATOR_CONSTANTS.INTEREST_RATES[formData.loanType];
+      if (typeof interestRate !== 'number') {
+        setError('Invalid interest rate for selected loan type');
+        setCalculating(false);
+        return;
+      }
+
       const serviceFee = amount * CALCULATOR_CONSTANTS.SERVICE_FEE_RATE;
       const amountAfterFee = amount - serviceFee;
 
+      // Calculate monthly payment using the formula: PMT = P * (r * (1 + r)^n) / ((1 + r)^n - 1)
+      // where P = principal, r = monthly interest rate, n = number of months
       const monthlyPayment = (amount * interestRate * Math.pow(1 + interestRate, months)) / 
                             (Math.pow(1 + interestRate, months) - 1);
       
       const totalRepayment = monthlyPayment * months;
+
+      // Validate results
+      if (isNaN(monthlyPayment) || isNaN(totalRepayment)) {
+        setError('Error in calculation. Please check your inputs.');
+        setCalculating(false);
+        return;
+      }
 
       setCalculatedResults({
         loanAmount: amount,
@@ -112,151 +190,219 @@ export default function LoanCalculator() {
         duration: months,
         nextPaymentDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       });
-    } catch (error) {
-      console.error('Calculation error:', error);
-      alert('Error calculating loan details. Please try again.');
+      setError('');
+    } catch (err) {
+      console.error('Calculation error:', err);
+      setError('Error calculating loan details. Please try again.');
     } finally {
       setCalculating(false);
     }
-  };
+  }, [formData]);
 
-  const handleProceed = () => {
-    const amount = parseFloat(loanAmount.replace(/[^0-9.]/g, ''));
+  const handleProceed = useCallback(() => {
+    if (!calculatedResults) {
+      setError('Please calculate loan details first');
+      return;
+    }
+
+    const amount = parseFloat(formData.amount.replace(/[^0-9.]/g, ''));
+    if (isNaN(amount)) {
+      setError('Invalid loan amount');
+      return;
+    }
+
     const calculatedData = {
-      loanType: selectedLoanType,
+      loanType: formData.loanType,
       amount,
-      duration,
-      calculatedResults
+      duration: parseInt(formData.duration),
+      calculatedResults: {
+        ...calculatedResults,
+        loanAmount: amount,
+        monthlyPayment: calculatedResults.monthlyPayment,
+        totalRepayment: calculatedResults.totalRepayment
+      }
     };
 
-    navigate('/loan-details', { 
-      state: calculatedData
-    });
-  };
+    // Save to session storage
+    sessionStorage.setItem('loanApplication', JSON.stringify(calculatedData));
 
-  const handleLoanTypeChange = (e) => {
-    const type = e.target.value;
-    setSelectedLoanType(type);
-    if (type) {
-      const selectedLoan = LOAN_TYPES[type];
-      setInterestRate(selectedLoan.monthlyInterestRate);
-    }
-  };
+    // Navigate to loan details form (first step after calculator)
+      navigate('/loan-details', { 
+        state: { 
+          ...calculatedData,
+          step: currentStep + 1,
+        totalSteps,
+        isApplicationFlow: true
+      },
+      replace: true
+    });
+  }, [calculatedResults, formData, navigate]);
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="subtitle1" gutterBottom>
-          Step 1 of 4: Loan Calculation
-        </Typography>
-        <Box sx={{ width: '100%', bgcolor: 'grey.200', borderRadius: 1, height: 8 }}>
-          <Box sx={{ width: '25%', height: '100%', bgcolor: 'primary.main', borderRadius: 1 }} />
+      {isApplicationFlow && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            Step {currentStep} of {totalSteps}: Loan Calculation
+          </Typography>
+          <Box sx={{ width: '100%', bgcolor: 'grey.200', borderRadius: 1, height: 8 }}>
+            <Box 
+              sx={{ 
+                width: `${(currentStep / totalSteps) * 100}%`, 
+                height: '100%', 
+                bgcolor: '#fd7c07', 
+                borderRadius: 1 
+              }} 
+            />
+          </Box>
         </Box>
-      </Box>
+      )}
 
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h4" gutterBottom>
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={fadeInUp}
+      >
+        <FormCard>
+          <Typography variant="h4" gutterBottom color="#002044">
           Loan Calculator
         </Typography>
 
         <Grid container spacing={4}>
           <Grid item xs={12} md={6}>
-            <FormControl fullWidth sx={{ mb: 3 }}>
-              <InputLabel>Select Loan Type</InputLabel>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <FormControl fullWidth>
+                  <InputLabel id="loan-type-label">Select Loan Type</InputLabel>
               <Select
-                value={selectedLoanType}
-                onChange={handleLoanTypeChange}
+                    labelId="loan-type-label"
+                    id="loan-type"
+                    name="loanType"
+                    value={formData.loanType}
+                    onChange={handleInputChange}
                 label="Select Loan Type"
-              >
-                <MenuItem value="">--Select--</MenuItem>
-                <MenuItem value="SALARY_ADVANCE">Salary Advance</MenuItem>
-                <MenuItem value="GRZ">Civil Service</MenuItem>
-                <MenuItem value="PERSONAL">Personal</MenuItem>
-                <MenuItem value="BUSINESS">Business</MenuItem>
+                    sx={{
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#E0E0E0',
+                      },
+                      '&:hover .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#FD7C07',
+                      },
+                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#FD7C07',
+                      },
+                    }}
+                  >
+                    {Object.entries(LOAN_TYPES).map(([key, loan]) => (
+                      <MenuItem key={key} value={key}>
+                        {loan.name}
+                      </MenuItem>
+                    ))}
               </Select>
             </FormControl>
 
-            <TextField
+                <StyledTextField
               fullWidth
               label="Loan Amount (ZMW)"
-              value={loanAmount}
-              onChange={handleAmountChange}
+                  name="amount"
+                  value={formData.amount}
+                  onChange={handleInputChange}
               onBlur={handleAmountBlur}
-              sx={{ mb: 3 }}
               InputProps={{
-                startAdornment: <InputAdornment position="start">K</InputAdornment>,
-              }}
-            />
+                    startAdornment: 'K',
+                  }}
+                />
 
-            <FormControl fullWidth sx={{ mb: 3 }}>
-              <InputLabel>Loan Duration</InputLabel>
-              <Select
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
+                <StyledTextField
+                  select
+                  fullWidth
                 label="Loan Duration"
+                  name="duration"
+                  value={formData.duration}
+                  onChange={handleInputChange}
+                  SelectProps={{
+                    MenuProps: {
+                      PaperProps: {
+                        style: {
+                          maxHeight: 300,
+                        },
+                      },
+                    },
+                  }}
               >
                 {[1, 2, 3, 4, 5, 6, 12, 24, 36, 48, 60].map((months) => (
                   <MenuItem key={months} value={months}>
                     {months} {months === 1 ? 'Month' : 'Months'}
                   </MenuItem>
                 ))}
-              </Select>
-            </FormControl>
+                </StyledTextField>
 
-            <Button
-              variant="contained"
-              fullWidth
+                <PrimaryButton
               onClick={calculateLoan}
-              disabled={!selectedLoanType || !loanAmount || !duration}
+                  disabled={!formData.loanType || !formData.amount || !formData.duration}
+                  component={motion.button}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
             >
               Calculate Loan
-            </Button>
+                </PrimaryButton>
+              </Box>
           </Grid>
 
           {calculatedResults && (
             <Grid item xs={12} md={6}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h5" gutterBottom>
+                <StyledCard>
+                  <Box sx={{ p: 3 }}>
+                    <Typography variant="h5" gutterBottom color="#002044">
                     Loan Summary
                   </Typography>
                   
                   <Grid container spacing={2}>
                     <Grid item xs={6}>
                       <Typography color="textSecondary">Service Fee (5%):</Typography>
-                      <Typography variant="h6">{formatCurrency(calculatedResults.serviceFee)}</Typography>
+                        <Typography variant="h6" color="#002044">
+                          {formatCurrency(calculatedResults.serviceFee)}
+                        </Typography>
                     </Grid>
                     
                     <Grid item xs={6}>
                       <Typography color="textSecondary">Amount to Receive:</Typography>
-                      <Typography variant="h6">{formatCurrency(calculatedResults.amountReceived)}</Typography>
+                        <Typography variant="h6" color="#002044">
+                          {formatCurrency(calculatedResults.amountReceived)}
+                        </Typography>
                     </Grid>
                     
                     <Grid item xs={6}>
                       <Typography color="textSecondary">Monthly Payment:</Typography>
-                      <Typography variant="h6">{formatCurrency(calculatedResults.monthlyPayment)}</Typography>
+                        <Typography variant="h6" color="#002044">
+                          {formatCurrency(calculatedResults.monthlyPayment)}
+                        </Typography>
                     </Grid>
                     
                     <Grid item xs={6}>
                       <Typography color="textSecondary">Total Repayment:</Typography>
-                      <Typography variant="h6">{formatCurrency(calculatedResults.totalRepayment)}</Typography>
+                        <Typography variant="h6" color="#002044">
+                          {formatCurrency(calculatedResults.totalRepayment)}
+                        </Typography>
                     </Grid>
                   </Grid>
 
                   <Box sx={{ mt: 3 }}>
-                    <Button
-                      variant="contained"
+                      <PrimaryButton
                       fullWidth
                       onClick={handleProceed}
                       startIcon={<ArrowForwardIcon />}
+                        component={motion.button}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
                     >
-                      Proceed with Application
-                    </Button>
+                      {isApplicationFlow ? 'Continue Application' : 'Proceed with Application'}
+                      </PrimaryButton>
+                    </Box>
                   </Box>
-                </CardContent>
-              </Card>
+                </StyledCard>
             </Grid>
           )}
+          </Grid>
 
           {calculating && (
             <Box sx={{ 
@@ -270,17 +416,17 @@ export default function LoanCalculator() {
               justifyContent: 'center',
               bgcolor: 'rgba(255, 255, 255, 0.8)' 
             }}>
-              <CircularProgress />
+              <CircularProgress sx={{ color: '#fd7c07' }} />
             </Box>
           )}
 
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert severity="error" sx={{ mt: 2 }}>
               {error}
             </Alert>
           )}
-        </Grid>
-      </Paper>
+        </FormCard>
+      </motion.div>
     </Container>
   );
 } 

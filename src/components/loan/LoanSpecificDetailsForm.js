@@ -1,21 +1,21 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Container,
-  Paper,
   Typography,
   Grid,
   TextField,
-  Button,
   Box,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Alert
+  Alert,
+  Divider,
 } from '@mui/material';
 import { LOAN_TYPES } from '../../constants/loanTypes';
 import { formatCurrency } from '../../utils/formatters';
+import { StyledCard, PrimaryButton } from '../../theme/components';
 
 const ZAMBIAN_BANKS = [
   'AB Bank Zambia',
@@ -46,58 +46,52 @@ const employmentTypes = [
   'Other'
 ];
 
-export default function LoanSpecificDetailsForm() {
+const LoanSpecificDetailsForm = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { loanType, calculatedResults, personalDetails } = location.state || {};
-
-  const [formData, setFormData] = useState({
-    // Employment Details
-    employmentType: '',
-    employerName: '',
-    employmentDuration: '',
-    monthlyNetSalary: '',
-    jobTitle: '',
-    employerAddress: '',
-    supervisorName: '',
-    supervisorContact: '',
-
-    // GRZ Specific
-    employeeNumber: '',
-    department: '',
-    gradeLevel: '',
-    yearsInService: '',
-
-    // Business Specific
-    businessName: '',
-    businessType: '',
-    businessRegistrationNumber: '',
-    tradingLicenseNumber: '',
-    annualTurnover: '',
-    yearsInBusiness: '',
-
-    // Banking Details
-    bankName: '',
-    bankBranch: '',
-    accountNumber: '',
-    accountType: '',
-    accountDuration: '',
-
-    // Next of Kin
-    nextOfKinName: '',
-    nextOfKinRelation: '',
-    nextOfKinPhone: '',
-    nextOfKinAddress: ''
-  });
-
   const [errors, setErrors] = useState({});
 
-  const validateForm = () => {
+  // Get application data from location state or session storage once on mount
+  const [applicationData] = useState(() => {
+    return location.state || JSON.parse(sessionStorage.getItem('loanApplication') || '{}');
+  });
+
+  // Extract step information from location state
+  const { 
+    loanType, 
+    amount, 
+    duration, 
+    calculatedResults,
+    step: currentStep = 3,
+    totalSteps = 7,
+    isApplicationFlow = true 
+  } = applicationData;
+
+  const [formData, setFormData] = useState({
+    employmentType: '',
+    employerName: '',
+    monthlyIncome: '',
+    bankName: '',
+    accountNumber: '',
+    nextOfKinName: '',
+    nextOfKinPhone: '',
+    nextOfKinRelation: '',
+  });
+
+  // Check for required data once on mount
+  useEffect(() => {
+    if (!loanType || !calculatedResults) {
+      navigate('/calculator');
+    }
+  }, [loanType, calculatedResults, navigate]);
+
+  const validateForm = useCallback(() => {
     const newErrors = {};
 
     // Common validations
     if (!formData.employmentType) newErrors.employmentType = 'Employment type is required';
     if (!formData.employerName) newErrors.employerName = 'Employer name is required';
+    if (!formData.monthlyIncome) newErrors.monthlyIncome = 'Monthly income is required';
 
     // Banking details validation
     if (!formData.bankName) newErrors.bankName = 'Bank name is required';
@@ -106,12 +100,13 @@ export default function LoanSpecificDetailsForm() {
     // Next of kin validation
     if (!formData.nextOfKinName) newErrors.nextOfKinName = 'Next of kin name is required';
     if (!formData.nextOfKinPhone) newErrors.nextOfKinPhone = 'Next of kin phone is required';
+    if (!formData.nextOfKinRelation) newErrors.nextOfKinRelation = 'Relationship is required';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
+  }, [formData]);
 
-  const handleChange = (e) => {
+  const handleChange = useCallback((e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -123,304 +118,265 @@ export default function LoanSpecificDetailsForm() {
         [name]: ''
       }));
     }
-  };
+  }, [errors]);
 
-  const handleNext = () => {
-    // Log for debugging
-    console.log('Next button clicked');
-    console.log('Form data:', formData);
-
+  const handleSubmit = useCallback(() => {
     if (!validateForm()) {
-      console.log('Form validation failed');
       return;
     }
 
-    try {
-      const applicationData = {
-        ...location.state,
-        loanSpecificDetails: formData
-      };
+    // Get existing loan application data
+    const existingData = JSON.parse(sessionStorage.getItem('loanApplication') || '{}');
+    
+    // Merge form data with existing loan application data
+    const updatedData = {
+      ...existingData,
+      loanSpecificDetails: formData
+    };
 
-      // Log the data being saved
-      console.log('Saving application data:', applicationData);
+    // Save updated data to session storage
+    sessionStorage.setItem('loanApplication', JSON.stringify(updatedData));
 
-      // Save to session storage
-      sessionStorage.setItem('loanApplication', JSON.stringify(applicationData));
-
-      // Navigate to documents page
-      navigate('/loan-documents', { 
-        state: applicationData,
-        replace: true // Add this to ensure proper navigation
-      });
-    } catch (error) {
-      console.error('Navigation error:', error);
-      setErrors(prev => ({
-        ...prev,
-        general: 'Failed to proceed. Please try again.'
-      }));
-    }
-  };
-
-  const renderLoanSpecificFields = () => {
-    switch (loanType) {
-      case 'GRZ':
-        return (
-          <>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                required
-                label="Employee Number"
-                name="employeeNumber"
-                value={formData.employeeNumber}
-                onChange={handleChange}
-                error={!!errors.employeeNumber}
-                helperText={errors.employeeNumber}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                required
-                label="Department"
-                name="department"
-                value={formData.department}
-                onChange={handleChange}
-                error={!!errors.department}
-                helperText={errors.department}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                required
-                label="Grade Level"
-                name="gradeLevel"
-                value={formData.gradeLevel}
-                onChange={handleChange}
-                error={!!errors.gradeLevel}
-                helperText={errors.gradeLevel}
-              />
-            </Grid>
-          </>
-        );
-
-      case 'BUSINESS':
-        return (
-          <>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                required
-                label="Business Name"
-                name="businessName"
-                value={formData.businessName}
-                onChange={handleChange}
-                error={!!errors.businessName}
-                helperText={errors.businessName}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                required
-                label="Business Registration Number"
-                name="businessRegistrationNumber"
-                value={formData.businessRegistrationNumber}
-                onChange={handleChange}
-                error={!!errors.businessRegistrationNumber}
-                helperText={errors.businessRegistrationNumber}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                required
-                label="Trading License Number"
-                name="tradingLicenseNumber"
-                value={formData.tradingLicenseNumber}
-                onChange={handleChange}
-                error={!!errors.tradingLicenseNumber}
-                helperText={errors.tradingLicenseNumber}
-              />
-            </Grid>
-          </>
-        );
-
-      default:
-        return null;
-    }
-  };
+    // Navigate to document upload
+    navigate('/document-upload', { 
+      state: {
+        ...updatedData,
+        step: currentStep + 1,
+        totalSteps,
+        isApplicationFlow
+      },
+      replace: true
+    });
+  }, [navigate, formData, currentStep, totalSteps, isApplicationFlow, validateForm]);
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       {/* Progress Bar */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="subtitle1" gutterBottom>
-          Step 3 of 4: Additional Details
-        </Typography>
-        <Box sx={{ width: '100%', bgcolor: 'grey.200', borderRadius: 1, height: 8 }}>
-          <Box sx={{ width: '75%', height: '100%', bgcolor: 'primary.main', borderRadius: 1 }} />
+      {isApplicationFlow && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            Step {currentStep} of {totalSteps}: Employment & Banking Details
+          </Typography>
+          <Box sx={{ width: '100%', bgcolor: 'grey.200', borderRadius: 1, height: 8 }}>
+            <Box 
+              sx={{ 
+                width: `${(currentStep / totalSteps) * 100}%`, 
+                height: '100%', 
+                bgcolor: '#fd7c07', 
+                borderRadius: 1 
+              }} 
+            />
+          </Box>
         </Box>
-      </Box>
+      )}
 
       <Grid container spacing={3}>
+        {/* Form Section */}
         <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h5" gutterBottom>
-              Employment Details
-            </Typography>
+          <StyledCard>
+            <Box sx={{ p: 3 }}>
+              <Typography variant="h5" gutterBottom color="#002044">
+                Additional Details
+              </Typography>
 
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth required error={!!errors.employmentType}>
-                  <InputLabel>Employment Type</InputLabel>
-                  <Select
-                    name="employmentType"
-                    value={formData.employmentType}
+              <Grid container spacing={3}>
+                {/* Employment Details */}
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1" gutterBottom color="#002044">
+                    Employment Information
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <FormControl fullWidth error={!!errors.employmentType}>
+                    <InputLabel>Employment Type</InputLabel>
+                    <Select
+                      name="employmentType"
+                      value={formData.employmentType}
+                      onChange={handleChange}
+                      label="Employment Type"
+                    >
+                      {employmentTypes.map(type => (
+                        <MenuItem key={type} value={type}>{type}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Employer Name"
+                    name="employerName"
+                    value={formData.employerName}
                     onChange={handleChange}
-                    label="Employment Type"
-                  >
-                    {employmentTypes.map(type => (
-                      <MenuItem key={type} value={type}>{type}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
+                    error={!!errors.employerName}
+                    helperText={errors.employerName}
+                  />
+                </Grid>
 
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Employer Name"
-                  name="employerName"
-                  value={formData.employerName}
-                  onChange={handleChange}
-                  error={!!errors.employerName}
-                  helperText={errors.employerName}
-                />
-              </Grid>
-
-              {renderLoanSpecificFields()}
-
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-                  Banking Details
-                </Typography>
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth required error={!!errors.bankName}>
-                  <InputLabel>Bank Name</InputLabel>
-                  <Select
-                    name="bankName"
-                    value={formData.bankName}
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Monthly Income"
+                    name="monthlyIncome"
+                    value={formData.monthlyIncome}
                     onChange={handleChange}
-                    label="Bank Name"
-                  >
-                    {ZAMBIAN_BANKS.map(bank => (
-                      <MenuItem key={bank} value={bank}>{bank}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                    error={!!errors.monthlyIncome}
+                    helperText={errors.monthlyIncome}
+                    InputProps={{
+                      startAdornment: 'K',
+                    }}
+                  />
+                </Grid>
+
+                {/* Banking Details */}
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle1" gutterBottom color="#002044">
+                    Banking Information
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <FormControl fullWidth error={!!errors.bankName}>
+                    <InputLabel>Bank Name</InputLabel>
+                    <Select
+                      name="bankName"
+                      value={formData.bankName}
+                      onChange={handleChange}
+                      label="Bank Name"
+                    >
+                      {ZAMBIAN_BANKS.map(bank => (
+                        <MenuItem key={bank} value={bank}>{bank}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Account Number"
+                    name="accountNumber"
+                    value={formData.accountNumber}
+                    onChange={handleChange}
+                    error={!!errors.accountNumber}
+                    helperText={errors.accountNumber}
+                  />
+                </Grid>
+
+                {/* Next of Kin Details */}
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle1" gutterBottom color="#002044">
+                    Next of Kin Information
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Next of Kin Name"
+                    name="nextOfKinName"
+                    value={formData.nextOfKinName}
+                    onChange={handleChange}
+                    error={!!errors.nextOfKinName}
+                    helperText={errors.nextOfKinName}
+                  />
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Next of Kin Phone"
+                    name="nextOfKinPhone"
+                    value={formData.nextOfKinPhone}
+                    onChange={handleChange}
+                    error={!!errors.nextOfKinPhone}
+                    helperText={errors.nextOfKinPhone}
+                  />
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Relationship"
+                    name="nextOfKinRelation"
+                    value={formData.nextOfKinRelation}
+                    onChange={handleChange}
+                    error={!!errors.nextOfKinRelation}
+                    helperText={errors.nextOfKinRelation}
+                  />
+                </Grid>
               </Grid>
 
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Account Number"
-                  name="accountNumber"
-                  value={formData.accountNumber}
-                  onChange={handleChange}
-                  error={!!errors.accountNumber}
-                  helperText={errors.accountNumber}
-                />
-              </Grid>
+              {errors.general && (
+                <Alert severity="error" sx={{ mt: 2 }}>
+                  {errors.general}
+                </Alert>
+              )}
 
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-                  Next of Kin Details
-                </Typography>
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Next of Kin Name"
-                  name="nextOfKinName"
-                  value={formData.nextOfKinName}
-                  onChange={handleChange}
-                  error={!!errors.nextOfKinName}
-                  helperText={errors.nextOfKinName}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Relationship"
-                  name="nextOfKinRelation"
-                  value={formData.nextOfKinRelation}
-                  onChange={handleChange}
-                  error={!!errors.nextOfKinRelation}
-                  helperText={errors.nextOfKinRelation}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Next of Kin Phone"
-                  name="nextOfKinPhone"
-                  value={formData.nextOfKinPhone}
-                  onChange={handleChange}
-                  error={!!errors.nextOfKinPhone}
-                  helperText={errors.nextOfKinPhone}
-                />
-              </Grid>
-            </Grid>
-
-            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-              <Button onClick={() => navigate(-1)}>
-                Back
-              </Button>
-              <Button variant="contained" onClick={handleNext}>
-                Next
-              </Button>
+              <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+                <PrimaryButton onClick={() => navigate(-1)}>
+                  Back
+                </PrimaryButton>
+                <PrimaryButton onClick={handleSubmit}>
+                  Continue
+                </PrimaryButton>
+              </Box>
             </Box>
-          </Paper>
+          </StyledCard>
         </Grid>
 
+        {/* Summary Section */}
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Loan Summary
-            </Typography>
-            <Box sx={{ mt: 2 }}>
-              <Typography color="textSecondary">Amount:</Typography>
-              <Typography variant="h6">
-                {formatCurrency(calculatedResults?.loanAmount)}
+          <StyledCard>
+            <Box sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom color="#002044">
+                Loan Summary
               </Typography>
-              <Typography color="textSecondary" sx={{ mt: 2 }}>
-                Monthly Payment:
-              </Typography>
-              <Typography variant="h6">
-                {formatCurrency(calculatedResults?.monthlyPayment)}
-              </Typography>
-              <Typography color="textSecondary" sx={{ mt: 2 }}>
-                Duration:
-              </Typography>
-              <Typography variant="h6">
-                {calculatedResults?.duration} months
-              </Typography>
+              
+              <Box sx={{ mt: 2 }}>
+                <Typography color="textSecondary">Loan Type:</Typography>
+                <Typography variant="h6" color="#002044">
+                  {LOAN_TYPES[loanType]?.name || 'N/A'}
+                </Typography>
+
+                <Typography color="textSecondary" sx={{ mt: 2 }}>
+                  Amount:
+                </Typography>
+                <Typography variant="h6" color="#002044">
+                  {formatCurrency(amount)}
+                </Typography>
+
+                <Typography color="textSecondary" sx={{ mt: 2 }}>
+                  Monthly Payment:
+                </Typography>
+                <Typography variant="h6" color="#002044">
+                  {formatCurrency(calculatedResults?.monthlyPayment)}
+                </Typography>
+
+                <Typography color="textSecondary" sx={{ mt: 2 }}>
+                  Duration:
+                </Typography>
+                <Typography variant="h6" color="#002044">
+                  {duration} months
+                </Typography>
+
+                <Typography color="textSecondary" sx={{ mt: 2 }}>
+                  Total Repayment:
+                </Typography>
+                <Typography variant="h6" color="#002044">
+                  {formatCurrency(calculatedResults?.totalRepayment)}
+                </Typography>
+              </Box>
             </Box>
-          </Paper>
+          </StyledCard>
         </Grid>
       </Grid>
     </Container>
   );
-} 
+};
+
+export default LoanSpecificDetailsForm; 

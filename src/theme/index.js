@@ -4,14 +4,10 @@ export const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#2E7D32', // Green color that works well with the light background
-      light: '#4CAF50',
-      dark: '#1B5E20',
+      main: '#002044',
     },
     secondary: {
-      main: '#1976D2', // Blue for accents
-      light: '#42A5F5',
-      dark: '#1565C0',
+      main: '#fd7c07',
     },
     background: {
       default: '#CCDDCF', // Light mode background
