@@ -1,19 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://yfvizjsuuwapylilchli.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlmdml6anN1dXdhcHlsaWxjaGxpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNjc1ODEyMCwiZXhwIjoyMDUyMzM0MTIwfQ.uvxX-fUtWdEknXQPd8MHKpTihH854VXSFOykteNsypw';
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing Supabase configuration');
-  throw new Error('Missing Supabase configuration');
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
 }
 
 // Create Supabase client with additional options
-export const supabase = createClient(supabaseUrl, supabaseKey, {
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true
+    autoRefreshToken: true
   },
   global: {
     headers: {
@@ -21,6 +19,49 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     }
   }
 });
+
+// Helper function to handle Supabase errors
+export const handleSupabaseError = (error) => {
+  console.error('Supabase error:', error.message);
+  throw new Error(error.message);
+};
+
+// Authentication helpers
+export const supabaseAuth = {
+  signIn: async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  signOut: async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) handleSupabaseError(error);
+  },
+
+  getUser: async () => {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error) handleSupabaseError(error);
+    return user;
+  },
+
+  getSession: async () => {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) handleSupabaseError(error);
+    return session;
+  }
+};
+
+// Real-time subscription helper
+export const subscribeToChannel = (channelName, callback) => {
+  return supabase
+    .channel(channelName)
+    .on('postgres_changes', { event: '*', schema: 'public' }, callback)
+    .subscribe();
+};
 
 // Test connection function with retries
 export const testConnection = async (retries = 3) => {
@@ -388,5 +429,68 @@ export const addStatusHistory = async (statusData) => {
   } catch (error) {
     console.error('Error adding status history:', error);
     throw error;
+  }
+};
+
+// Add this function to your supabaseClient.js
+export const inspectDatabase = async () => {
+  try {
+    // Get all tables directly with better error handling
+    const tables = {
+      loan_applications: await supabase
+        .from('loan_applications')
+        .select('id, application_id, status, amount, loan_type, created_at')
+        .limit(1),
+      
+      loan_documents: await supabase
+        .from('loan_documents')
+        .select('id, loan_application_id, document_type, file_path')
+        .limit(1),
+      
+      loan_status_history: await supabase
+        .from('loan_status_history')
+        .select('id, loan_application_id, status, notes, created_at')
+        .limit(1)
+    };
+
+    // Process results
+    const result = {
+      success: true,
+      tables: {},
+      errors: {},
+      samples: {}
+    };
+
+    // Process each table result
+    for (const [tableName, response] of Object.entries(tables)) {
+      if (response.error) {
+        console.log(`Error for ${tableName}:`, response.error);
+        result.errors[tableName] = response.error.message;
+        result.tables[tableName] = [];
+      } else if (response.data && response.data.length > 0) {
+        result.tables[tableName] = Object.keys(response.data[0]);
+        result.samples[tableName] = response.data[0];
+      } else {
+        result.tables[tableName] = [];
+        result.samples[tableName] = null;
+      }
+    }
+
+    // Log the results for debugging
+    console.log('Database Inspection Results:', {
+      tables: result.tables,
+      errors: result.errors,
+      samples: result.samples
+    });
+
+    return result;
+
+  } catch (error) {
+    console.error('Error inspecting database:', error);
+    return {
+      success: false,
+      error: error.message,
+      details: error
+    };
   }
 }; 

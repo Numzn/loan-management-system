@@ -12,6 +12,7 @@ import ApplicationSuccess from '../components/pages/ApplicationSuccess';
 import ClientDashboard from '../components/dashboards/ClientDashboard';
 import ManagementRouter from '../managementside/components/routing/ManagementRouter';
 import MockLoginPage from '../components/pages/MockLoginPage';
+import { useUser } from '../contexts/UserContext';
 
 // Public Route with Navbar
 const PublicRoute = ({ children }) => {
@@ -99,17 +100,23 @@ const AppRoutes = () => {
         }
       />
 
-      {/* Client Dashboard Route */}
-      <Route
-        path="/client-dashboard"
+      {/* Client Dashboard Routes */}
+      <Route 
+        path="/client/dashboard" 
         element={
           <PublicRoute>
             <ClientDashboard />
           </PublicRoute>
-        }
+        } 
+      />
+      
+      {/* Redirect /dashboard to /client/dashboard */}
+      <Route 
+        path="/dashboard" 
+        element={<Navigate to="/client/dashboard" replace />} 
       />
 
-      {/* Catch all unmatched routes */}
+      {/* Catch unmatched routes - move this to the end */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

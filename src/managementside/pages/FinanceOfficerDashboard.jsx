@@ -10,11 +10,10 @@ import {
   Button,
   TextField,
 } from '@mui/material';
-import { collection, query, orderBy, onSnapshot, where, Timestamp, updateDoc, doc, addDoc } from 'firebase/firestore';
-import { db } from '../../config/firebase';
 import NotificationSystem from '../components/notifications/NotificationSystem';
 import { useNavigate } from 'react-router-dom';
 import KanbanBoard from '../components/kanban/KanbanBoard';
+import { supabase } from '../../utils/supabaseClient';
 
 const kanbanColumns = [
   {
@@ -42,23 +41,54 @@ const FinanceOfficerDashboard = () => {
   const [delayReason, setDelayReason] = useState('');
 
   useEffect(() => {
-    // Subscribe to loan applications ready for funding
-    const q = query(
-      collection(db, 'loanApplications'),
-      where('status', 'in', ['pending_funding', 'disbursed', 'awaiting_funds']),
-      orderBy('createdAt', 'desc')
-    );
+    const fetchLoans = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('loan_applications')
+          .select('*')
+          .in('status', ['pending_funding', 'disbursed', 'awaiting_funds'])
+          .order('created_at', { ascending: false });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newLoans = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setLoans(newLoans);
-      setLoading(false);
-    });
+        if (error) throw error;
 
-    return () => unsubscribe();
+        setLoans(data || []);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching loans:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchLoans();
+
+    // Set up real-time subscription
+    const subscription = supabase
+      .channel('loan_changes')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'loan_applications',
+          filter: `status=in.(pending_funding,disbursed,awaiting_funds)`
+        },
+        (payload) => {
+          // Handle real-time updates
+          if (payload.eventType === 'INSERT') {
+            setLoans(prev => [...prev, payload.new]);
+          } else if (payload.eventType === 'UPDATE') {
+            setLoans(prev => prev.map(loan => 
+              loan.id === payload.new.id ? payload.new : loan
+            ));
+          } else if (payload.eventType === 'DELETE') {
+            setLoans(prev => prev.filter(loan => loan.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleLoanMove = async (loanId, sourceStatus, destinationStatus) => {
@@ -68,53 +98,46 @@ const FinanceOfficerDashboard = () => {
     }
 
     try {
-      await updateDoc(doc(db, 'loanApplications', loanId), {
+      const updates = {
         status: destinationStatus,
-        updatedAt: Timestamp.now()
-      });
-
-      // Add notification based on the status change
-      let notifications = [];
+        updated_at: new Date().toISOString()
+      };
 
       if (destinationStatus === 'disbursed') {
-        // Notify all relevant parties
-        notifications = [
-          {
-            type: 'loan_disbursed',
-            title: 'Loan Disbursed',
-            message: `Loan application ${loanId} has been successfully disbursed`,
-            timestamp: Timestamp.now(),
-            isRead: false,
-            priority: 'high',
-            loanId,
-            recipientRole: 'loan_officer'
-          },
-          {
-            type: 'loan_disbursed',
-            title: 'Loan Disbursed',
-            message: `Loan application ${loanId} has been successfully disbursed`,
-            timestamp: Timestamp.now(),
-            isRead: false,
-            priority: 'high',
-            loanId,
-            recipientRole: 'manager'
-          },
-          {
-            type: 'loan_disbursed',
-            title: 'Loan Disbursed',
-            message: `Loan application ${loanId} has been successfully disbursed`,
-            timestamp: Timestamp.now(),
-            isRead: false,
-            priority: 'high',
-            loanId,
-            recipientRole: 'director'
-          }
-        ];
+        updates.disbursement_date = new Date().toISOString();
+      }
 
-        // Add notifications
-        await Promise.all(notifications.map(notification => 
-          addDoc(collection(db, 'notifications'), notification)
-        ));
+      const { error } = await supabase
+        .from('loan_applications')
+        .update(updates)
+        .eq('id', loanId);
+
+      if (error) throw error;
+
+      // Add notification
+      if (destinationStatus === 'disbursed') {
+        await supabase.from('notifications').insert([
+          {
+            type: 'loan_disbursed',
+            title: 'Loan Disbursed',
+            message: `Loan application ${loanId} has been successfully disbursed`,
+            created_at: new Date().toISOString(),
+            is_read: false,
+            priority: 'high',
+            loan_id: loanId,
+            recipient_role: 'loan_officer'
+          },
+          {
+            type: 'loan_disbursed',
+            title: 'Loan Disbursed',
+            message: `Loan application ${loanId} has been successfully disbursed`,
+            created_at: new Date().toISOString(),
+            is_read: false,
+            priority: 'high',
+            loan_id: loanId,
+            recipient_role: 'manager'
+          }
+        ]);
       }
     } catch (error) {
       console.error('Error updating loan status:', error);
@@ -122,7 +145,6 @@ const FinanceOfficerDashboard = () => {
   };
 
   const handleLoanClick = (loan) => {
-    // Navigate to loan details view
     navigate(`/management/finance/loans/${loan.id}`);
   };
 
@@ -130,40 +152,40 @@ const FinanceOfficerDashboard = () => {
     if (!delayDialog.loanId || !delayReason.trim()) return;
 
     try {
-      await updateDoc(doc(db, 'loanApplications', delayDialog.loanId), {
-        status: 'awaiting_funds',
-        delayReason: delayReason.trim(),
-        delayedAt: Timestamp.now()
-      });
+      const { error } = await supabase
+        .from('loan_applications')
+        .update({
+          status: 'awaiting_funds',
+          delay_reason: delayReason.trim(),
+          delayed_at: new Date().toISOString()
+        })
+        .eq('id', delayDialog.loanId);
 
-      // Notify relevant parties
-      const notifications = [
+      if (error) throw error;
+
+      // Add notifications
+      await supabase.from('notifications').insert([
         {
           type: 'loan_delayed',
           title: 'Loan Disbursement Delayed',
           message: `Loan application ${delayDialog.loanId} disbursement has been delayed. Reason: ${delayReason}`,
-          timestamp: Timestamp.now(),
-          isRead: false,
+          created_at: new Date().toISOString(),
+          is_read: false,
           priority: 'high',
-          loanId: delayDialog.loanId,
-          recipientRole: 'director'
+          loan_id: delayDialog.loanId,
+          recipient_role: 'director'
         },
         {
           type: 'loan_delayed',
           title: 'Loan Disbursement Delayed',
           message: `Loan application ${delayDialog.loanId} disbursement has been delayed. Reason: ${delayReason}`,
-          timestamp: Timestamp.now(),
-          isRead: false,
+          created_at: new Date().toISOString(),
+          is_read: false,
           priority: 'high',
-          loanId: delayDialog.loanId,
-          recipientRole: 'manager'
+          loan_id: delayDialog.loanId,
+          recipient_role: 'manager'
         }
-      ];
-
-      // Add notifications
-      await Promise.all(notifications.map(notification => 
-        addDoc(collection(db, 'notifications'), notification)
-      ));
+      ]);
 
       setDelayDialog({ open: false, loanId: null });
       setDelayReason('');
@@ -171,6 +193,14 @@ const FinanceOfficerDashboard = () => {
       console.error('Error marking loan as delayed:', error);
     }
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography>Loading...</Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>

@@ -1,24 +1,17 @@
-import { db } from '../config/firebase';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  orderBy 
-} from 'firebase/firestore';
+import { supabase } from '../utils/supabaseClient';
 
 export const userDataService = {
   async saveUserData(email, data) {
     try {
-      const userRef = doc(db, 'users', email);
-      await setDoc(userRef, {
-        ...data,
-        updatedAt: new Date(),
-        email
-      }, { merge: true });
+      const { data: result, error } = await supabase
+        .from('users')
+        .upsert([{
+          email,
+          ...data,
+          updated_at: new Date()
+        }]);
+      
+      if (error) throw error;
       return true;
     } catch (error) {
       console.error('Error saving user data:', error);
@@ -28,9 +21,14 @@ export const userDataService = {
 
   async getUserData(email) {
     try {
-      const userRef = doc(db, 'users', email);
-      const userDoc = await getDoc(userRef);
-      return userDoc.exists() ? userDoc.data() : null;
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .single();
+      
+      if (error) throw error;
+      return data;
     } catch (error) {
       console.error('Error getting user data:', error);
       throw error;
@@ -39,17 +37,14 @@ export const userDataService = {
 
   async getPreviousApplications(email) {
     try {
-      const applicationsRef = collection(db, 'loanApplications');
-      const q = query(
-        applicationsRef,
-        where('email', '==', email),
-        orderBy('createdAt', 'desc')
-      );
-      const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const { data, error } = await supabase
+        .from('loan_applications')
+        .select('*')
+        .eq('email', email)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data;
     } catch (error) {
       console.error('Error getting previous applications:', error);
       throw error;

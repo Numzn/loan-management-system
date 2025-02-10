@@ -5,96 +5,38 @@ import {
   Typography,
   Stack,
   Chip,
-  IconButton,
-  Tooltip,
-  alpha,
-  styled
+  useTheme
 } from '@mui/material';
 import {
-  CheckCircle,
-  Warning,
-  Schedule,
-  ArrowForward,
-  Block,
-  AttachMoney,
   AccessTime,
   Done,
-  ErrorOutline
+  AttachMoney,
+  ErrorOutline,
+  Warning,
+  Schedule
 } from '@mui/icons-material';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
-import { colors } from '../../../theme/colors';
-
-// Styled Components
-const KanbanColumn = styled(Paper)(({ theme, color = colors.primary }) => ({
-  padding: theme.spacing(2),
-  background: alpha(color, 0.05),
-  backdropFilter: 'blur(10px)',
-  borderRadius: '16px',
-  border: `1px solid ${alpha(color, 0.1)}`,
-  minHeight: '75vh',
-  display: 'flex',
-  flexDirection: 'column',
-  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-  '&:hover': {
-    transform: 'translateY(-4px)',
-    boxShadow: `0 4px 20px ${alpha(color, 0.2)}`,
-  },
-  '& .MuiTypography-root': {
-    color: colors.text.primary,
-  }
-}));
-
-const LoanCard = styled(Paper)(({ theme, status }) => ({
-  padding: theme.spacing(2.5),
-  marginBottom: theme.spacing(2),
-  background: alpha(colors.card, 0.7),
-  backdropFilter: 'blur(8px)',
-  borderRadius: '12px',
-  border: `1px solid ${alpha(colors.text.primary, 0.1)}`,
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  cursor: 'grab',
-  '&:hover': {
-    transform: 'translateY(-4px) scale(1.02)',
-    boxShadow: `0 8px 24px ${alpha(colors.background, 0.3)}`,
-  },
-  '&:active': {
-    cursor: 'grabbing',
-    transform: 'scale(1.05)',
-  }
-}));
-
-const StyledChip = styled(Chip)(({ color = colors.primary }) => ({
-  backgroundColor: alpha(color, 0.1),
-  color: color,
-  borderRadius: '8px',
-  '& .MuiChip-icon': {
-    color: color,
-  },
-  '& .MuiChip-label': {
-    fontWeight: 600,
-  }
-}));
-
-const statusColors = {
-  new: colors.warning,
-  under_review: colors.info,
-  manager_approved: colors.success,
-  director_approved: colors.purple,
-  disbursed: colors.success,
-  rejected: colors.error,
-  pending_funding: colors.warning,
-  awaiting_funds: colors.warning
-};
+import { alpha } from '@mui/material/styles';
 
 const statusIcons = {
-  new: <AccessTime />,
-  under_review: <Schedule />,
-  manager_approved: <Done />,
-  director_approved: <CheckCircle />,
+  new_review: <AccessTime />,
+  approved: <Done />,
   disbursed: <AttachMoney />,
   rejected: <ErrorOutline />,
   pending_funding: <Schedule />,
   awaiting_funds: <Warning />
+};
+
+const getStatusColor = (status, theme) => {
+  const colors = {
+    new_review: theme.palette.warning,
+    approved: theme.palette.success,
+    disbursed: theme.palette.info,
+    rejected: theme.palette.error,
+    pending_funding: theme.palette.warning,
+    awaiting_funds: theme.palette.warning
+  };
+  return colors[status] || theme.palette.primary;
 };
 
 const KanbanBoard = ({
@@ -105,113 +47,97 @@ const KanbanBoard = ({
   role,
   allowDrag = true
 }) => {
+  const theme = useTheme();
+
   const handleDragEnd = (result) => {
     if (!result.destination || !allowDrag) return;
-
     const { source, destination, draggableId } = result;
-    
     if (source.droppableId !== destination.droppableId) {
       onLoanMove(draggableId, source.droppableId, destination.droppableId);
     }
   };
 
-  const renderLoanCard = (loan, index) => (
-    <Draggable
-      key={loan.id}
-      draggableId={loan.id}
-      index={index}
-      isDragDisabled={!allowDrag}
-    >
-      {(provided, snapshot) => (
-        <LoanCard
-          ref={provided.innerRef}
-          {...provided.draggableProps}
-          {...provided.dragHandleProps}
-          status={loan.status}
-          elevation={snapshot.isDragging ? 6 : 1}
-          onClick={() => onLoanClick(loan)}
-          sx={{
-            transform: snapshot.isDragging ? 'scale(1.05)' : 'none',
-            boxShadow: snapshot.isDragging 
-              ? `0 12px 32px ${alpha(colors.background, 0.4)}`
-              : 'none',
-          }}
-        >
-          <Stack spacing={2}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography 
-                variant="subtitle1" 
-                sx={{ 
-                  fontWeight: 600,
-                  color: colors.text.primary,
-                  fontSize: '1.1rem'
-                }}
-              >
-                {loan.clientName || `${loan.personalDetails?.firstName} ${loan.personalDetails?.lastName}`}
-              </Typography>
-              <StyledChip
-                size="small"
-                icon={statusIcons[loan.status]}
-                label={loan.status.replace(/_/g, ' ').toUpperCase()}
-                color={statusColors[loan.status]}
-              />
-            </Box>
-            <Box>
-              <Typography 
-                variant="body2" 
-                sx={{ 
-                  color: colors.text.secondary,
-                  fontSize: '0.95rem',
-                  mb: 0.5
-                }}
-              >
-                Amount: K{loan.amount?.toLocaleString() || loan.calculatedResults?.loanAmount?.toLocaleString()}
-              </Typography>
-              <Typography 
-                variant="body2" 
-                sx={{ 
-                  color: colors.text.secondary,
-                  fontSize: '0.95rem'
-                }}
-              >
-                Type: {loan.loanType}
-              </Typography>
-            </Box>
-            {loan.status === 'rejected' && loan.rejectionReason && (
-              <Typography 
-                variant="body2" 
-                sx={{ 
-                  color: colors.error,
-                  bgcolor: alpha(colors.error, 0.1),
-                  p: 1,
-                  borderRadius: 1
-                }}
-              >
-                Reason: {loan.rejectionReason}
-              </Typography>
-            )}
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-              {role === 'loan_officer' && loan.status === 'rejected' && (
-                <Tooltip title="Resubmit" arrow>
-                  <IconButton 
-                    size="small" 
-                    sx={{ 
-                      color: colors.primary,
-                      '&:hover': {
-                        bgcolor: alpha(colors.primary, 0.1)
-                      }
-                    }}
-                  >
-                    <ArrowForward />
-                  </IconButton>
-                </Tooltip>
+  const renderLoanCard = (loan, index) => {
+    const statusColor = getStatusColor(loan.status, theme);
+
+    return (
+      <Draggable
+        key={loan.id}
+        draggableId={loan.id}
+        index={index}
+        isDragDisabled={!allowDrag}
+      >
+        {(provided, snapshot) => (
+          <Paper
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            {...provided.dragHandleProps}
+            elevation={snapshot.isDragging ? 6 : 1}
+            onClick={() => onLoanClick(loan)}
+            sx={{
+              p: 2.5,
+              mb: 2,
+              backgroundColor: theme.palette.background.paper,
+              borderRadius: 2,
+              border: `1px solid ${alpha(statusColor.main, 0.2)}`,
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              cursor: 'grab',
+              '&:hover': {
+                transform: 'translateY(-4px) scale(1.02)',
+                boxShadow: `0 8px 24px ${alpha(theme.palette.common.black, 0.15)}`,
+              },
+              '&:active': {
+                cursor: 'grabbing',
+                transform: 'scale(1.05)',
+              }
+            }}
+          >
+            <Stack spacing={2}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  {loan.clientName}
+                </Typography>
+                <Chip
+                  size="small"
+                  icon={statusIcons[loan.status]}
+                  label={loan.status.replace(/_/g, ' ').toUpperCase()}
+                  sx={{
+                    backgroundColor: alpha(statusColor.main, 0.1),
+                    color: statusColor.main,
+                    borderRadius: '8px',
+                    '& .MuiChip-icon': {
+                      color: 'inherit'
+                    }
+                  }}
+                />
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                  Amount: K{loan.amount?.toLocaleString()}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Type: {loan.loanType}
+                </Typography>
+              </Box>
+              {loan.status === 'rejected' && loan.rejectionReason && (
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    color: theme.palette.error.main,
+                    bgcolor: alpha(theme.palette.error.main, 0.1),
+                    p: 1,
+                    borderRadius: 1
+                  }}
+                >
+                  Reason: {loan.rejectionReason}
+                </Typography>
               )}
-            </Box>
-          </Stack>
-        </LoanCard>
-      )}
-    </Draggable>
-  );
+            </Stack>
+          </Paper>
+        )}
+      </Draggable>
+    );
+  };
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
@@ -221,51 +147,63 @@ const KanbanBoard = ({
           gridTemplateColumns: `repeat(${columns.length}, 1fr)`, 
           gap: 3, 
           p: 3,
-          bgcolor: alpha(colors.background, 0.3),
+          bgcolor: 'background.default',
           borderRadius: '24px',
-          backdropFilter: 'blur(12px)'
         }}
       >
-        {columns.map((column) => (
-          <Droppable key={column.id} droppableId={column.id}>
-            {(provided) => (
-              <KanbanColumn
-                color={column.color}
-                ref={provided.innerRef}
-                {...provided.droppableProps}
-              >
-                <Typography 
-                  variant="h6" 
-                  gutterBottom
+        {columns.map((column) => {
+          const statusColor = getStatusColor(column.id, theme);
+          
+          return (
+            <Droppable key={column.id} droppableId={column.id}>
+              {(provided) => (
+                <Paper
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
                   sx={{
-                    fontWeight: 600,
-                    fontSize: '1.2rem',
-                    mb: 3,
+                    p: 2,
+                    background: alpha(theme.palette.background.paper, 0.05),
+                    backdropFilter: 'blur(10px)',
+                    borderRadius: '16px',
+                    border: `1px solid ${alpha(statusColor.main, 0.1)}`,
+                    minHeight: '75vh',
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    '&::before': {
-                      content: '""',
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      bgcolor: column.color,
-                      display: 'inline-block'
-                    }
+                    flexDirection: 'column'
                   }}
                 >
-                  {column.title}
-                </Typography>
-                <Box sx={{ flexGrow: 1 }}>
-                  {loans
-                    .filter((loan) => loan.status === column.id)
-                    .map((loan, index) => renderLoanCard(loan, index))}
-                  {provided.placeholder}
-                </Box>
-              </KanbanColumn>
-            )}
-          </Droppable>
-        ))}
+                  <Typography 
+                    variant="h6" 
+                    gutterBottom
+                    sx={{
+                      fontWeight: 600,
+                      fontSize: '1.2rem',
+                      mb: 3,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      '&::before': {
+                        content: '""',
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        bgcolor: statusColor.main,
+                        display: 'inline-block'
+                      }
+                    }}
+                  >
+                    {column.title}
+                  </Typography>
+                  <Box sx={{ flexGrow: 1 }}>
+                    {loans
+                      .filter((loan) => loan.status === column.id)
+                      .map((loan, index) => renderLoanCard(loan, index))}
+                    {provided.placeholder}
+                  </Box>
+                </Paper>
+              )}
+            </Droppable>
+          );
+        })}
       </Box>
     </DragDropContext>
   );

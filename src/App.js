@@ -1,17 +1,18 @@
+import React from 'react';
 import { BrowserRouter as Router } from 'react-router-dom';
-import { UserProvider } from './contexts/UserContext';
 import { ThemeProvider } from '@mui/material/styles';
-import { theme } from './theme';
+import { UserProvider } from './contexts/UserContext';
+import { theme } from './theme/theme';
 import AppRoutes from './routes/AppRoutes';
 
 function App() {
   return (
     <ThemeProvider theme={theme}>
-      <Router>
-        <UserProvider>
+      <UserProvider>
+        <Router>
           <AppRoutes />
-        </UserProvider>
-      </Router>
+        </Router>
+      </UserProvider>
     </ThemeProvider>
   );
 }

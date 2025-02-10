@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import {
   Container,
   Typography,
@@ -14,6 +15,11 @@ import {
   ListItemText,
   Paper,
   LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
 } from '@mui/material';
 import {
   InsertDriveFile,
@@ -35,6 +41,7 @@ import {
   handleDatabaseError,
   LOAN_STATUS
 } from '../../config/supabaseClient';
+import { submitLoanApplication } from './LoanSubmissionHandler';
 
 const SectionTitle = ({ children, icon: Icon }) => (
   <Box sx={{ 
@@ -124,29 +131,34 @@ const LoanReview = () => {
   const location = useLocation();
   const navigate = useNavigate();
   
-  const [applicationData, setApplicationData] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [retryCount, setRetryCount] = useState(0);
   const [documentStatus, setDocumentStatus] = useState({});
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  // Get application data from session storage or location state
+  const applicationData = useMemo(() => {
+    const savedData = sessionStorage.getItem('loanApplication');
+    return savedData ? JSON.parse(savedData) : location.state;
+  }, [location.state]);
 
   // Initialize application data from location state or session storage
   useEffect(() => {
     try {
-      const data = location.state || JSON.parse(sessionStorage.getItem('loanApplication') || '{}');
-      if (!data || !data.loanType) {
+      if (!applicationData || !applicationData.loanType) {
         console.error('No loan application data found');
         navigate('/calculator');
         return;
       }
       
       // Log document data when application data is loaded
-      if (data.documents) {
+      if (applicationData.documents) {
         console.log('Loaded application documents:', {
-          documentCount: Object.keys(data.documents).length,
-          documents: Object.entries(data.documents).map(([type, details]) => ({
+          documentCount: Object.keys(applicationData.documents).length,
+          documents: Object.entries(applicationData.documents).map(([type, details]) => ({
             type,
             hasFile: !!details.file,
             fileName: details.fileName,
@@ -155,13 +167,11 @@ const LoanReview = () => {
           }))
         });
       }
-      
-      setApplicationData(data);
     } catch (err) {
       console.error('Error loading application data:', err);
       navigate('/calculator');
     }
-  }, [location.state, navigate]);
+  }, [applicationData, navigate]);
 
   // Monitor online/offline status
   useEffect(() => {
@@ -366,231 +376,53 @@ const LoanReview = () => {
     }
   };
 
-  const handleSubmit = useCallback(async () => {
-    if (!applicationData) return;
-    
-    if (isOffline) {
-      setError('You are currently offline. Please check your internet connection and try again.');
-      return;
-    }
+  const handleConfirmSubmit = () => {
+    setShowConfirmDialog(true);
+  };
 
-    setIsSubmitting(true);
-    setError('');
+  const handleCancelSubmit = () => {
+    setShowConfirmDialog(false);
+  };
 
+  const handleSubmit = async () => {
     try {
-      // Generate application ID
-      const applicationId = `LOAN-${Date.now().toString().slice(-6)}`;
+      setIsSubmitting(true);
+      setError(null);
+      setShowConfirmDialog(false);
 
-      // Format the data for Supabase
-      const applicationPayload = {
-        application_id: applicationId,
-        first_name: applicationData.personalDetails?.firstName || '',
-        last_name: applicationData.personalDetails?.lastName || '',
-        gender: applicationData.personalDetails?.gender || '',
-        date_of_birth: applicationData.personalDetails?.dob || null,
-        nrc_number: applicationData.personalDetails?.idNumber || '',
-        phone_number: applicationData.personalDetails?.phoneNumber || '',
-        email: applicationData.personalDetails?.email || '',
-        physical_address: applicationData.personalDetails?.address || '',
-        loan_type: applicationData.loanType || '',
-        loan_amount: parseFloat(applicationData.amount) || 0,
-        loan_purpose: applicationData.loanType || '',
-        loan_duration: parseInt(applicationData.duration) || 0,
-        monthly_payment: parseFloat(applicationData.calculatedResults?.monthlyPayment) || 0,
-        total_repayment: parseFloat(applicationData.calculatedResults?.totalRepayment) || 0,
-        monthly_income: parseFloat(applicationData.loanSpecificDetails?.monthlyIncome) || 0,
-        employment_type: applicationData.loanSpecificDetails?.employmentType || '',
-        employer_name: applicationData.loanSpecificDetails?.employerName || '',
-        bank_name: applicationData.loanSpecificDetails?.bankName || '',
-        account_number: applicationData.loanSpecificDetails?.accountNumber || '',
-        next_of_kin_name: applicationData.loanSpecificDetails?.nextOfKinName || '',
-        next_of_kin_phone: applicationData.loanSpecificDetails?.nextOfKinPhone || '',
-        next_of_kin_relation: applicationData.loanSpecificDetails?.nextOfKinRelation || '',
-        status: LOAN_STATUS.DRAFT,
-        submitted_at: new Date().toISOString()
-      };
+      const result = await submitLoanApplication(applicationData);
+      
+      // Store application data in session storage
+      sessionStorage.setItem('currentApplication', JSON.stringify(result.applicationData));
 
-      // Update required fields validation
-      const requiredFields = {
-        first_name: 'First Name',
-        last_name: 'Last Name',
-        gender: 'Gender',
-        date_of_birth: 'Date of Birth',
-        nrc_number: 'NRC Number',
-        phone_number: 'Phone Number',
-        email: 'Email',
-        physical_address: 'Physical Address',
-        loan_type: 'Loan Type',
-        loan_amount: 'Loan Amount',
-        loan_purpose: 'Loan Purpose',
-        employment_type: 'Employment Type',
-        employer_name: 'Employer Name',
-        monthly_income: 'Monthly Income',
-        bank_name: 'Bank Name',
-        account_number: 'Account Number'
-      };
+      // Show success message
+      toast.success('Application submitted successfully!');
 
-      const missingFields = Object.entries(requiredFields)
-        .filter(([key]) => !applicationPayload[key])
-        .map(([, label]) => label);
+      // Log navigation attempt
+      console.log('Attempting navigation to dashboard with:', result.applicationData);
 
-      if (missingFields.length > 0) {
-        throw new Error(`Please fill in all required fields: ${missingFields.join(', ')}`);
-      }
-
-      // Save application data
-      const { data: applicationResult, error: applicationError } = await supabase
-        .from(TABLES.LOAN_APPLICATIONS)
-        .insert([applicationPayload])
-        .select()
-        .single();
-
-      if (applicationError) {
-        console.error('Application save error:', applicationError);
-        throw new Error(handleDatabaseError(applicationError));
-      }
-
-      // Save documents if any
-      if (applicationData.documents && Object.keys(applicationData.documents).length > 0) {
-        const totalDocuments = Object.keys(applicationData.documents).length;
-        const documentsWithFiles = Object.entries(applicationData.documents)
-          .filter(([, docDetails]) => docDetails.file && docDetails.fileName);
-
-        console.log('Document validation:', {
-          total: totalDocuments,
-          withFiles: documentsWithFiles.length,
-          documents: applicationData.documents
-        });
-
-        // Check required documents first
-        const requiredDocuments = Object.entries(applicationData.documents)
-          .filter(([, details]) => details.required)
-          .map(([docType]) => docType);
-
-        const missingRequiredFiles = requiredDocuments.filter(docType => {
-          const doc = applicationData.documents[docType];
-          return !doc?.file || !doc?.fileName;
-        });
-
-        if (missingRequiredFiles.length > 0) {
-          throw new Error(`Please upload all required documents: ${missingRequiredFiles.join(', ')}`);
-        }
-
-        if (documentsWithFiles.length === 0) {
-          console.warn('No documents with files to upload');
-          return;
-        }
-
-        let uploadedCount = 0;
-        const documentPromises = documentsWithFiles
-          .map(async ([docType, docDetails]) => {
-            try {
-              const result = await uploadDocument(docType, docDetails, applicationId);
-              if (result) {
-                uploadedCount++;
-                setUploadProgress((uploadedCount / documentsWithFiles.length) * 100);
-                
-                return {
-                  loan_application_id: applicationResult.id,
-                  document_type: result.document_type,
-                  file_path: result.file_path,
-                  file_name: result.file_name,
-                  uploaded_at: new Date().toISOString()
-                };
-              }
-              return null;
-            } catch (error) {
-              console.error(`Error uploading ${docType}:`, error);
-              return null;
-            }
-          });
-
-        // Wait for all document uploads to complete
-        const documentRecords = (await Promise.all(documentPromises)).filter(Boolean);
-
-        console.log('Document upload results:', {
-          attempted: documentsWithFiles.length,
-          successful: documentRecords.length,
-          records: documentRecords
-        });
-
-        // Save document records to database
-        if (documentRecords.length > 0) {
-          console.log('Saving document records:', documentRecords);
-
-          const { error: documentsError } = await supabase
-            .from(TABLES.LOAN_DOCUMENTS)
-            .insert(documentRecords);
-
-          if (documentsError) {
-            console.error('Document save error:', documentsError);
-            throw new Error('Failed to save document records');
-          }
-
-          // Verify the uploaded documents
-          const uploadedDocs = await verifyUploadedDocuments(applicationResult.id);
-          console.log('Verified uploaded documents:', {
-            expected: documentRecords.length,
-            actual: uploadedDocs.length,
-            documents: uploadedDocs
-          });
-
-          if (uploadedDocs.length !== documentRecords.length) {
-            throw new Error('Some documents failed to upload. Please try again.');
-          }
-        }
-      }
-
-      // Add initial status history
-      try {
-        const { error: historyError } = await supabase
-          .from(TABLES.LOAN_STATUS_HISTORY)
-          .insert([{
-            loan_application_id: applicationResult.id,
-            status: LOAN_STATUS.DRAFT,
-            notes: 'Application draft created'
-            // Let the database handle created_at with its default value
-          }]);
-
-        if (historyError) {
-          console.error('Status history error:', historyError);
-          // Log the error but don't throw as it's not critical
-        }
-      } catch (error) {
-        console.error('Failed to create status history:', error);
-        // Continue with the flow as this is not critical
-      }
-
-      // Clear application data from session storage
+      // Clear any existing application data
       sessionStorage.removeItem('loanApplication');
+      sessionStorage.removeItem('personalDetails');
+      sessionStorage.removeItem('loanSpecificDetails');
 
-      // Navigate to client dashboard with application data
-      navigate('/client-dashboard', {
+      // Navigate to client dashboard
+      navigate('/client/dashboard', { 
         state: {
-          applicationData: applicationResult,
-          message: 'Your loan application has been submitted successfully!',
-          applicationId: applicationResult.application_id
+          applicationData: result.applicationData,
+          message: 'Application submitted successfully!'
         },
         replace: true
       });
+
     } catch (error) {
       console.error('Submission error:', error);
-      
-      let errorMessage = 'Failed to submit application. ';
-      if (!navigator.onLine) {
-        errorMessage += 'Please check your internet connection and try again.';
-      } else if (error.message) {
-        errorMessage += error.message;
-      } else {
-        errorMessage += 'Please try again later or contact support if the problem persists.';
-      }
-      
-      setError(errorMessage);
+      setError(error.message || 'Failed to submit application');
+      toast.error(error.message || 'Failed to submit application');
     } finally {
       setIsSubmitting(false);
-      setUploadProgress(0);
     }
-  }, [navigate, isOffline, applicationData, documentStatus]);
+  };
 
   // Cleanup on unmount
   useEffect(() => {
@@ -688,7 +520,7 @@ const LoanReview = () => {
                 <InfoItem label="Full Name" value={`${personalDetails?.firstName} ${personalDetails?.lastName}`} />
                 <InfoItem label="Gender" value={personalDetails?.gender} />
                 <InfoItem label="Date of Birth" value={personalDetails?.dob} />
-                <InfoItem label="NRC Number" value={personalDetails?.idNumber} />
+                <InfoItem label="NRC Number" value={personalDetails?.nrcNumber} />
                 <InfoItem label="Phone Number" value={personalDetails?.phoneNumber} />
                 <InfoItem label="Email" value={personalDetails?.email} />
                 <InfoItem label="Address" value={personalDetails?.address} />
@@ -787,7 +619,7 @@ const LoanReview = () => {
                   Back
                 </PrimaryButton>
                 <PrimaryButton
-                  onClick={handleSubmit}
+                  onClick={handleConfirmSubmit}
                   disabled={isSubmitting || isOffline}
                   sx={{
                     minWidth: 200,
@@ -796,7 +628,11 @@ const LoanReview = () => {
                     }
                   }}
                 >
-                  {isSubmitting ? <CircularProgress size={24} /> : 'Submit Application'}
+                  {isSubmitting ? (
+                    <CircularProgress size={24} sx={{ color: '#fff' }} />
+                  ) : (
+                    'Submit Application'
+                  )}
                 </PrimaryButton>
               </Box>
             </Box>
@@ -882,6 +718,46 @@ const LoanReview = () => {
           </StyledCard>
         </Grid>
       </Grid>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={showConfirmDialog}
+        onClose={handleCancelSubmit}
+        aria-labelledby="confirm-dialog-title"
+      >
+        <DialogTitle id="confirm-dialog-title">
+          Confirm Loan Application Submission
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to submit your loan application? Please verify all information is correct.
+          </Typography>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Loan Amount: {formatCurrency(applicationData.amount)}
+            </Typography>
+            <Typography variant="subtitle1" gutterBottom>
+              Duration: {applicationData.duration} months
+            </Typography>
+            <Typography variant="subtitle1">
+              Monthly Payment: {formatCurrency(applicationData.calculatedResults?.monthlyPayment)}
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelSubmit} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSubmit} 
+            color="primary" 
+            variant="contained"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Submitting...' : 'Confirm Submit'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

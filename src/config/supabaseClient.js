@@ -1,10 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Get environment variables
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL?.trim();
-const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY?.trim();
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
-// Constants for table names and storage buckets
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseKey);
+
 export const TABLES = {
   LOAN_APPLICATIONS: 'loan_applications',
   LOAN_DOCUMENTS: 'loan_documents',
@@ -41,8 +45,8 @@ export const LOAN_STATUS = {
   SUBMITTED: 'submitted',
   UNDER_REVIEW: 'under_review',
   APPROVED: 'approved',
-  REJECTED: 'rejected',
   DISBURSED: 'disbursed',
+  REJECTED: 'rejected',
   CLOSED: 'closed'
 };
 
@@ -62,7 +66,6 @@ class MockSupabaseClient {
     this.auth = {
       getSession: () => Promise.resolve({ data: { session: null }, error: null }),
       onAuthStateChange: (callback) => {
-        // Return mock unsubscribe function
         return { data: { subscription: { unsubscribe: () => {} } } };
       }
     };
@@ -79,8 +82,38 @@ class MockSupabaseClient {
     this.from = (table) => ({
       select: (columns) => ({
         eq: (column, value) => ({
-          single: () => Promise.resolve({ data: null, error: null }),
-          execute: () => Promise.resolve({ data: [], error: null })
+          single: () => Promise.resolve({ 
+            data: {
+              id: '123',
+              status: 'submitted',
+              loan_amount: 5000,
+              created_at: new Date().toISOString(),
+              loan_documents: []
+            }, 
+            error: null 
+          }),
+          order: (column, { ascending }) => Promise.resolve({ 
+            data: [
+              {
+                id: '1',
+                status: 'submitted',
+                created_at: new Date().toISOString()
+              }
+            ], 
+            error: null 
+          })
+        }),
+        order: (column, { ascending }) => ({
+          eq: (column, value) => Promise.resolve({ 
+            data: [
+              {
+                id: '1',
+                status: 'submitted',
+                created_at: new Date().toISOString()
+              }
+            ], 
+            error: null 
+          })
         }),
         execute: () => Promise.resolve({ data: [], error: null })
       }),
@@ -96,7 +129,7 @@ class MockSupabaseClient {
 }
 
 // Create mock client instance
-const supabase = new MockSupabaseClient();
+const mockSupabase = new MockSupabaseClient();
 
 // Mock storage initialization
 const initializeStorage = async () => {
@@ -106,10 +139,10 @@ const initializeStorage = async () => {
 
 // Mock client getter
 export const getSupabaseClient = () => {
-  return supabase;
+  return mockSupabase;
 };
 
-export { supabase, initializeStorage };
+export { mockSupabase, initializeStorage };
 
 // Helper function to validate file type
 export const isValidFileType = (file) => {

@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
-import { auth, db } from '../../config/firebase';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { supabase } from '../../utils/supabaseClient';
 import { setUser, setError } from '../../store/slices/authSlice';
 import { UserRoles } from '../../constants/roles';
 import {
@@ -55,11 +53,10 @@ export default function Register() {
     }
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
+      const userCredential = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password
+      });
 
       const userData = {
         firstName: formData.firstName,
@@ -74,10 +71,10 @@ export default function Register() {
         })
       };
 
-      await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+      await supabase.from('users').insert(userData);
 
       dispatch(setUser({
-        uid: userCredential.user.uid,
+        uid: userCredential.user.id,
         ...userData
       }));
 

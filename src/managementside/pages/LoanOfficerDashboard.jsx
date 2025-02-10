@@ -12,6 +12,7 @@ import {
   Zoom,
   Tooltip,
   alpha,
+  styled
 } from '@mui/material';
 import {
   Add,
@@ -24,14 +25,12 @@ import {
   AccountBalanceWallet,
   PriceCheck
 } from '@mui/icons-material';
-import { collection, query, orderBy, onSnapshot, where, Timestamp, updateDoc, doc, addDoc } from 'firebase/firestore';
-import { db } from '../../config/firebase';
 import NotificationSystem from '../components/notifications/NotificationSystem';
 import { useNavigate } from 'react-router-dom';
-import { styled } from '@mui/material/styles';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import MetricCard from '../components/metrics/MetricCard';
 import { colors } from '../../theme/colors';
+import { supabase } from '../../utils/supabaseClient';
 
 // Styled Components
 const FloatingActionButton = styled(Fab)({
@@ -92,22 +91,22 @@ const kanbanColumns = [
   {
     id: 'new',
     title: 'New Applications',
-    color: '#ff9800'
+    color: colors.warning
   },
   {
     id: 'manager_approved',
     title: 'Manager Approved',
-    color: '#4caf50'
+    color: colors.success
   },
   {
     id: 'director_approved',
     title: 'Director Approved',
-    color: '#9c27b0'
+    color: colors.purple
   },
   {
     id: 'disbursed',
     title: 'Disbursed',
-    color: '#2196f3'
+    color: colors.primary
   }
 ];
 
@@ -116,50 +115,33 @@ const LoanOfficerDashboard = () => {
   const [openLoanTypes, setOpenLoanTypes] = useState(false);
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [metrics, setMetrics] = useState({
-    totalLoans: 0,
-    activeLoans: 0,
-    totalDisbursed: 0,
-    incomingFunds: 0
-  });
+  const [metrics, setMetrics] = useState(null);
 
   useEffect(() => {
-    // Subscribe to loan applications
-    const q = query(
-      collection(db, 'loanApplications'),
-      orderBy('createdAt', 'desc')
-    );
+    const fetchData = async () => {
+      try {
+        // Get metrics
+        const { data: metricsData, error: metricsError } = await supabase
+          .rpc('get_loan_officer_metrics');
+        if (metricsError) throw metricsError;
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newLoans = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setLoans(newLoans);
-      
-      // Calculate metrics
-      const totalLoans = newLoans.length;
-      const activeLoans = newLoans.filter(loan => 
-        ['new', 'under_review', 'manager_approved', 'director_approved'].includes(loan.status)
-      ).length;
-      const totalDisbursed = newLoans
-        .filter(loan => loan.status === 'disbursed')
-        .reduce((sum, loan) => sum + (loan.amount || 0), 0);
-      const incomingFunds = newLoans
-        .filter(loan => loan.status === 'director_approved')
-        .reduce((sum, loan) => sum + (loan.amount || 0), 0);
+        // Get loans
+        const { data: loansData, error: loansError } = await supabase
+          .from('loan_applications')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (loansError) throw loansError;
 
-      setMetrics({
-        totalLoans,
-        activeLoans,
-        totalDisbursed,
-        incomingFunds
-      });
-      
-      setLoading(false);
-    });
+        setMetrics(metricsData);
+        setLoans(loansData);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchData();
   }, []);
 
   const handleNewApplication = (loanType) => {
@@ -177,55 +159,37 @@ const LoanOfficerDashboard = () => {
 
   const handleLoanMove = async (loanId, sourceStatus, destinationStatus) => {
     try {
-      await updateDoc(doc(db, 'loanApplications', loanId), {
-        status: destinationStatus,
-        updatedAt: Timestamp.now()
-      });
+      const { error } = await supabase
+        .from('loan_applications')
+        .update({ status: destinationStatus, updated_at: new Date() })
+        .eq('id', loanId);
 
-      // Add notification for the next role
-      let recipientRole = '';
-      let title = '';
-      let message = '';
+      if (error) throw error;
 
-      switch (destinationStatus) {
-        case 'manager_approved':
-          recipientRole = 'manager';
-          title = 'New Loan for Review';
-          message = `Loan application ${loanId} has been forwarded for your review`;
-          break;
-        case 'director_approved':
-          recipientRole = 'director';
-          title = 'Loan Approved by Manager';
-          message = `Loan application ${loanId} has been approved by the manager`;
-          break;
-        case 'disbursed':
-          recipientRole = 'finance_officer';
-          title = 'Loan Ready for Disbursement';
-          message = `Loan application ${loanId} has been approved and is ready for disbursement`;
-          break;
-      }
+      // Refresh loans after update
+      const { data: updatedLoans, error: fetchError } = await supabase
+        .from('loan_applications')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      if (recipientRole) {
-      await addDoc(collection(db, 'notifications'), {
-          type: 'loan_status_update',
-          title,
-          message,
-        timestamp: Timestamp.now(),
-        isRead: false,
-          priority: 'high',
-          loanId,
-          recipientRole
-        });
-      }
+      if (fetchError) throw fetchError;
+      setLoans(updatedLoans);
     } catch (error) {
       console.error('Error updating loan status:', error);
     }
   };
 
   const handleLoanClick = (loan) => {
-    // Navigate to loan details view
     navigate(`/management/loan-officer/loans/${loan.id}`);
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ p: 3, display: 'flex', justifyContent: 'center' }}>
+        <Typography>Loading...</Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -234,53 +198,55 @@ const LoanOfficerDashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <MetricCard
             title="Total Loans"
-            value={metrics.totalLoans}
+            value={metrics?.totalLoans.value}
             icon={<Assessment sx={{ fontSize: 24 }} />}
+            trend={metrics?.totalLoans.trend}
             color={colors.primary}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <MetricCard
-            title="Active Loans"
-            value={metrics.activeLoans}
+            title="Active Applications"
+            value={metrics?.activeApplications.value}
             icon={<TrendingUp sx={{ fontSize: 24 }} />}
+            trend={metrics?.activeApplications.trend}
             color={colors.success}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <MetricCard
-            title="Total Disbursed"
-            value={metrics.totalDisbursed}
+            title="Disbursed Amount"
+            value={metrics?.disbursedAmount.value}
             icon={<AccountBalanceWallet sx={{ fontSize: 24 }} />}
+            trend={metrics?.disbursedAmount.trend}
             color={colors.purple}
-            prefix="K"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <MetricCard
-            title="Incoming Funds"
-            value={metrics.incomingFunds}
+            title="Approval Rate"
+            value={metrics?.approvalRate.value}
             icon={<PriceCheck sx={{ fontSize: 24 }} />}
+            trend={metrics?.approvalRate.trend}
             color={colors.warning}
-            prefix="K"
           />
         </Grid>
       </Grid>
 
       {/* Header Section */}
-          <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h4">Loan Applications</Typography>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <NotificationSystem />
-              <Button
-                variant="contained"
-                startIcon={<Add />}
+        <Stack direction="row" spacing={2} alignItems="center">
+          <NotificationSystem />
+          <Button
+            variant="contained"
+            startIcon={<Add />}
             onClick={() => setOpenLoanTypes(true)}
-              >
-                New Application
-              </Button>
-            </Stack>
-          </Box>
+          >
+            New Application
+          </Button>
+        </Stack>
+      </Box>
 
       {/* Kanban Board */}
       <KanbanBoard
@@ -350,9 +316,9 @@ const LoanOfficerDashboard = () => {
                     {loan.description}
                   </Typography>
                 </LoanTypeCard>
-        </Grid>
+              </Grid>
             ))}
-      </Grid>
+          </Grid>
         </DialogContent>
       </Dialog>
     </Box>

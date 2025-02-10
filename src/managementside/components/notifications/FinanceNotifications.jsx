@@ -10,9 +10,9 @@ import {
 } from '@mui/material';
 import { Notifications } from '@mui/icons-material';
 import { useUser } from '../../../contexts/UserContext';
-import { managerNotifications } from '../../../services/notificationService';
+import { financeNotifications } from '../../../services/notificationService';
 
-const NotificationSystem = () => {
+const FinanceNotifications = () => {
   const [notifications, setNotifications] = useState([]);
   const [anchorEl, setAnchorEl] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -20,7 +20,7 @@ const NotificationSystem = () => {
 
   useEffect(() => {
     const loadNotifications = async () => {
-      const mockData = managerNotifications.getMockNotifications();
+      const mockData = financeNotifications.getMockNotifications();
       setNotifications(mockData);
       setUnreadCount(mockData.filter(n => !n.read).length);
     };
@@ -38,7 +38,6 @@ const NotificationSystem = () => {
 
   const handleNotificationClick = async (notification) => {
     if (!notification.read) {
-      // Update local state
       setNotifications(prev =>
         prev.map(n =>
           n.id === notification.id
@@ -47,9 +46,6 @@ const NotificationSystem = () => {
         )
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
-
-      // For production, uncomment this:
-      // await notificationService.markAsRead(notification.id);
     }
     handleClose();
   };
@@ -59,8 +55,6 @@ const NotificationSystem = () => {
       pending_disbursement: '#ff9800',
       disbursement_success: '#4caf50',
       bank_details_update: '#2196f3',
-      new_application: '#9c27b0',
-      review_required: '#f44336',
       default: '#757575'
     };
     return colors[type] || colors.default;
@@ -86,7 +80,7 @@ const NotificationSystem = () => {
         }}
       >
         <Box sx={{ p: 2 }}>
-          <Typography variant="h6">Notifications</Typography>
+          <Typography variant="h6">Finance Notifications</Typography>
         </Box>
         <Divider />
         {notifications.length === 0 ? (
@@ -124,4 +118,4 @@ const NotificationSystem = () => {
   );
 };
 
-export default NotificationSystem; 
+export default FinanceNotifications; 

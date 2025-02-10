@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Container, Grid, Paper, Typography, Box, Alert,
-  Card, CardContent, LinearProgress, Chip, Avatar, Button,
-  List, ListItem, ListItemIcon, ListItemText
+  Card, CardContent, LinearProgress, Chip, Avatar,
+  List, ListItem, ListItemIcon, ListItemText,
+  Divider, IconButton, Tooltip
 } from '@mui/material';
 import {
   AccountBalance as LoanIcon,
@@ -11,7 +12,9 @@ import {
   Payment as PaymentIcon,
   Notifications as NotificationIcon,
   CheckCircle as CheckCircleIcon,
-  ArrowForward as ArrowForwardIcon
+  ArrowForward as ArrowForwardIcon,
+  Description as DocumentIcon,
+  AccessTime as TimeIcon
 } from '@mui/icons-material';
 import ApplicationDetails from './ApplicationDetails';
 import { supabase, TABLES, LOAN_STATUS } from '../../config/supabaseClient';
@@ -41,6 +44,7 @@ const STATUS_COLORS = {
 
 export default function ClientDashboard() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [applicationData, setApplicationData] = useState(null);
@@ -53,21 +57,34 @@ export default function ClientDashboard() {
         setLoading(true);
         setError(null);
 
-        // Get application ID from location state
-        const applicationId = location.state?.applicationData?.id;
-        
+        // Get application ID from various sources
+        let applicationId = location.state?.applicationData?.id;
         if (!applicationId) {
-          throw new Error('No application ID provided');
+          const urlParams = new URLSearchParams(window.location.search);
+          applicationId = urlParams.get('application');
+        }
+        if (!applicationId) {
+          const savedApp = sessionStorage.getItem('currentApplication');
+          if (savedApp) {
+            const parsedApp = JSON.parse(savedApp);
+            applicationId = parsedApp.id;
+          }
         }
 
-        // Fetch application data
+        if (!applicationId) {
+          throw new Error('No application ID found');
+        }
+
+        // Fetch application data with documents
         const { data: application, error: applicationError } = await supabase
           .from(TABLES.LOAN_APPLICATIONS)
           .select(`
             *,
             loan_documents (
+              id,
               document_type,
               file_name,
+              file_path,
               uploaded_at
             )
           `)
@@ -79,7 +96,12 @@ export default function ClientDashboard() {
         // Fetch status history
         const { data: history, error: historyError } = await supabase
           .from(TABLES.LOAN_STATUS_HISTORY)
-          .select('*')
+          .select(`
+            id,
+            status,
+            notes,
+            created_at
+          `)
           .eq('loan_application_id', applicationId)
           .order('created_at', { ascending: true });
 
@@ -87,9 +109,8 @@ export default function ClientDashboard() {
 
         setApplicationData(application);
         setStatusHistory(history || []);
-
-        // Store in session storage for persistence
         sessionStorage.setItem('currentApplication', JSON.stringify(application));
+
       } catch (err) {
         console.error('Error fetching application data:', err);
         setError(err.message);
@@ -126,6 +147,9 @@ export default function ClientDashboard() {
     return (
       <Box sx={{ p: 3 }}>
         <LinearProgress />
+        <Typography sx={{ mt: 2, textAlign: 'center' }}>
+          Loading your application...
+        </Typography>
       </Box>
     );
   }
@@ -142,157 +166,135 @@ export default function ClientDashboard() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
+      {/* Success Message */}
       {location.state?.message && (
         <Alert severity="success" sx={{ mb: 3 }}>
           {location.state.message}
         </Alert>
       )}
 
-      {/* User Profile Section */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
-        <Avatar
-          alt={applicationData?.applicant_name}
-          sx={{ 
-            width: 80, 
-            height: 80, 
-            mr: 2,
-            border: '2px solid',
-            borderColor: 'primary.main',
-            bgcolor: 'primary.main'
-          }}
-        >
-          {applicationData?.applicant_name?.charAt(0)}
-        </Avatar>
-        <Box>
-          <Typography variant="h4" gutterBottom>
-            Welcome Back, {applicationData?.applicant_name?.split(' ')[0]}
-          </Typography>
-          <Typography color="textSecondary">
-            {applicationData?.email}
-          </Typography>
-        </Box>
-      </Box>
-
-      {/* Application Status Card */}
+      {/* Header Section */}
       <Grid container spacing={3}>
         <Grid item xs={12}>
-          <Paper sx={{ p: 3, mb: 3 }}>
+          <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <LoanIcon sx={{ mr: 1 }} color="primary" />
-              <Typography variant="h6">
-                Application #{applicationData?.application_id}
-              </Typography>
-              <Chip 
-                label={applicationData?.status?.replace('_', ' ')}
-                color={STATUS_COLORS[applicationData?.status] || 'default'}
-                size="small"
-                sx={{ ml: 2 }}
-              />
+              <LoanIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+              <Box>
+                <Typography variant="h5" gutterBottom>
+                  Loan Application #{applicationData?.application_id}
+                </Typography>
+                <Chip 
+                  label={applicationData?.status?.replace('_', ' ').toUpperCase()}
+                  color={STATUS_COLORS[applicationData?.status] || 'default'}
+                  sx={{ fontWeight: 'bold' }}
+                />
+              </Box>
             </Box>
-            
-            <Box sx={{ mb: 2 }}>
-              <Typography color="textSecondary" gutterBottom>
-                Current Stage: {applicationData?.status?.replace('_', ' ')}
-              </Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={STATUS_PROGRESS[applicationData?.status] || 0}
-                sx={{ 
-                  height: 10, 
-                  borderRadius: 1,
-                  backgroundColor: 'rgba(0, 0, 0, 0.1)',
-                  '& .MuiLinearProgress-bar': {
-                    backgroundColor: applicationData?.status === LOAN_STATUS.REJECTED ? '#f44336' : '#4caf50'
-                  }
-                }}
-              />
-              <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
-                {STATUS_PROGRESS[applicationData?.status] || 0}% Complete
-              </Typography>
-            </Box>
-
-            {/* Status History */}
-            <List sx={{ mt: 2 }}>
-              {statusHistory.map((status, index) => (
-                <ListItem key={index} sx={{ py: 0.5 }}>
-                  <ListItemIcon>
-                    <CheckCircleIcon color="success" />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={status.status.replace('_', ' ')}
-                    secondary={new Date(status.created_at).toLocaleString()}
-                  />
-                  {index < statusHistory.length - 1 && (
-                    <ArrowForwardIcon sx={{ color: 'action.disabled' }} />
-                  )}
-                </ListItem>
-              ))}
-            </List>
-
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-              <Button
-                variant="outlined"
-                color="primary"
-                onClick={() => setDetailsOpen(true)}
-              >
-                View Complete Details
-              </Button>
-            </Box>
+            <LinearProgress 
+              variant="determinate" 
+              value={STATUS_PROGRESS[applicationData?.status] || 0}
+              sx={{ height: 8, borderRadius: 4 }}
+            />
           </Paper>
         </Grid>
 
-        {/* Status Cards */}
-        <Grid item xs={12} md={4}>
-          <Card>
+        {/* Loan Details Card */}
+        <Grid item xs={12} md={8}>
+          <Card sx={{ height: '100%', borderRadius: 2 }}>
             <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <ScheduleIcon sx={{ mr: 1 }} color="primary" />
-                <Typography variant="h6">Application Timeline</Typography>
-              </Box>
-              <Box>
-                <Typography variant="body2" color="textSecondary">
-                  Submitted: {new Date(applicationData?.submitted_at).toLocaleDateString()}
-                </Typography>
-                <Typography variant="body2" color="textSecondary">
-                  Last Updated: {new Date(applicationData?.updated_at || applicationData?.submitted_at).toLocaleDateString()}
-                </Typography>
-              </Box>
+              <Typography variant="h6" gutterBottom>
+                Loan Details
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <Typography color="textSecondary">Amount</Typography>
+                  <Typography variant="h5">
+                    {formatCurrency(applicationData?.loan_amount)}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography color="textSecondary">Duration</Typography>
+                  <Typography variant="h5">
+                    {applicationData?.duration_months} Months
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography color="textSecondary">Monthly Payment</Typography>
+                  <Typography variant="h5">
+                    {formatCurrency(applicationData?.monthly_payment)}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography color="textSecondary">Interest Rate</Typography>
+                  <Typography variant="h5">
+                    {applicationData?.interest_rate}%
+                  </Typography>
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
         </Grid>
 
+        {/* Status Timeline Card */}
         <Grid item xs={12} md={4}>
-          <Card>
+          <Card sx={{ height: '100%', borderRadius: 2 }}>
             <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <PaymentIcon sx={{ mr: 1 }} color="primary" />
-                <Typography variant="h6">Loan Amount</Typography>
-              </Box>
-              <Typography variant="h4">
-                {formatCurrency(applicationData?.loan_amount)}
+              <Typography variant="h6" gutterBottom>
+                Application Timeline
               </Typography>
-              <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                Purpose: {applicationData?.loan_purpose}
-              </Typography>
+              <List>
+                {statusHistory.map((status, index) => (
+                  <ListItem key={status.id} sx={{ py: 1 }}>
+                    <ListItemIcon>
+                      <TimeIcon color="primary" />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={status.status.replace('_', ' ').toUpperCase()}
+                      secondary={new Date(status.created_at).toLocaleDateString()}
+                    />
+                    {index < statusHistory.length - 1 && (
+                      <ArrowForwardIcon sx={{ color: 'action.disabled' }} />
+                    )}
+                  </ListItem>
+                ))}
+              </List>
             </CardContent>
           </Card>
         </Grid>
 
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <NotificationIcon sx={{ mr: 1 }} color="primary" />
-                <Typography variant="h6">Next Steps</Typography>
-              </Box>
-              <Typography variant="body2" color="textSecondary">
-                {getNextSteps()}
-              </Typography>
-            </CardContent>
-          </Card>
+        {/* Documents Section */}
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3, borderRadius: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              Submitted Documents
+            </Typography>
+            <Grid container spacing={2}>
+              {applicationData?.loan_documents?.map((doc) => (
+                <Grid item xs={12} sm={6} md={4} key={doc.id}>
+                  <Card sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        <DocumentIcon sx={{ mr: 1 }} />
+                        <Typography variant="subtitle1">
+                          {doc.document_type.replace('_', ' ')}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" color="textSecondary">
+                        {doc.file_name}
+                      </Typography>
+                      <Typography variant="caption" display="block">
+                        Uploaded: {new Date(doc.uploaded_at).toLocaleDateString()}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Paper>
         </Grid>
       </Grid>
 
+      {/* Application Details Dialog */}
       <ApplicationDetails
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
